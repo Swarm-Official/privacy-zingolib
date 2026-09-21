@@ -2,11 +2,13 @@
 
 `ChainType::CustomTestnet` selects the fixed SwarmTestnet network, whose light-wallet chain label is `swarm-testnet`. This profile replaces the retired Privacy Testnet profile that the same variant carried on the `privacy-testnet-wallet` branch; there is one custom-testnet slot in this SDK and SwarmTestnet occupies it.
 
-## The genesis hash is one constant, and it is currently a placeholder
+## The genesis hash is one constant
 
 `SWARM_TESTNET_GENESIS` in `zingolib/src/config.rs` is the only place the genesis hash is written. Everything else — the indexer identity check, the wallet profile, the tests, the desktop wallet's build-time verification — reads it from there.
 
-SwarmTestnet's genesis block does not exist yet. Until it does, that constant holds `SWARM_TESTNET_GENESIS_PLACEHOLDER`, which is the ASCII text `SWARMTESTNETGENESISPLACEHOLDER!!` in hexadecimal. No block can hash to it, so a build carrying it cannot be mistaken for one that talks to the real network, and `swarm_testnet_genesis_is_placeholder()` lets a release gate refuse such a build. Setting the real hash means editing that one constant and nothing else.
+It is `06b0b56c0dcf8695df0192439b73038006c48e3b1a7b907ecee69ef412d440fc`, taken from `network/swarm-testnet/manifest.json` in the project repository. Its generator reproduced it byte-identically four times: twice natively on Windows into fresh folders, and again from the ubuntu-22.04 and windows-latest CI jobs of [run 35620844481](https://github.com/brs-holding/privacy-zebra/actions/runs/35620844481).
+
+`SWARM_TESTNET_GENESIS_PLACEHOLDER` stays defined and `swarm_testnet_genesis_is_placeholder()` still answers whether a build carries it. That gate is what refused a release build while the network had no genesis block, and it stays so a stand-in can never be shipped by accident.
 
 ## Profile
 

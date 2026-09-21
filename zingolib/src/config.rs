@@ -64,10 +64,17 @@ pub const SWARM_TESTNET_GENESIS_PLACEHOLDER: &str =
 
 /// The one place SwarmTestnet's display-order genesis hash is written.
 ///
-/// Replacing this constant with the hash the genesis generator produces, and
-/// nothing else, re-points the whole SDK — indexer identity check, wallet
-/// profile and every test — at the real network.
-pub const SWARM_TESTNET_GENESIS: &str = SWARM_TESTNET_GENESIS_PLACEHOLDER;
+/// This is the real hash. It comes from `network/swarm-testnet/manifest.json`
+/// in the project repository, whose generator produced it byte-identically
+/// four times — twice natively on Windows into fresh folders, and again from
+/// the ubuntu-22.04 and windows-latest CI jobs of
+/// <https://github.com/brs-holding/privacy-zebra/actions/runs/35620844481>.
+///
+/// Everything that identifies the network — the indexer check, the wallet
+/// profile, the tests, the desktop wallet's build-time verification — reads it
+/// from here and nowhere else.
+pub const SWARM_TESTNET_GENESIS: &str =
+    "06b0b56c0dcf8695df0192439b73038006c48e3b1a7b907ecee69ef412d440fc";
 
 /// The light-wallet chain label SwarmTestnet's indexer reports, which is also
 /// this profile's wallet identity and data-directory name.
@@ -742,8 +749,10 @@ mod tests {
         );
     }
 
-    /// Until SwarmTestnet's genesis block exists this build carries a stand-in
-    /// that no block can hash to, and release gates read that from here.
+    /// The genesis constant is a well-formed hash, and the build says
+    /// truthfully whether it is the real one or the stand-in. The gate that
+    /// refuses a release build reads that answer, so it has to keep being
+    /// right after the real hash lands, not only before it.
     #[test]
     fn swarm_genesis_is_a_declared_placeholder_of_the_right_shape() {
         use super::{
@@ -765,6 +774,12 @@ mod tests {
             String::from_utf8(hex::decode(SWARM_TESTNET_GENESIS_PLACEHOLDER).unwrap()).unwrap(),
             "SWARMTESTNETGENESISPLACEHOLDER!!"
         );
+        // The real hash is in force, so the release gate now passes. Written
+        // as its own assertion rather than folded into the one above: if a
+        // future edit ever put the stand-in back, this is the line that says
+        // so in one word.
+        assert!(!swarm_testnet_genesis_is_placeholder());
+        assert_ne!(SWARM_TESTNET_GENESIS, SWARM_TESTNET_GENESIS_PLACEHOLDER);
     }
 
     #[tokio::test]
