@@ -864,6 +864,20 @@ mod config_template {
         CliConfigTemplate::fill(mode, communications, matches).map_err(|e| e.to_string())
     }
 
+    #[cfg(feature = "clearnet-test-mode")]
+    #[test]
+    fn privacy_online_requires_an_explicit_indexer() {
+        let error = fill(&[
+            examples::BIN_NAME,
+            "--online",
+            "--chain",
+            zingolib::config::PRIVACY_TESTNET_NAME,
+        ])
+        .err()
+        .unwrap();
+        assert_eq!(error, "provide --server for Privacy testnet");
+    }
+
     /// HYPOTHESIS: the flag outranks the environment, the environment
     /// serves when the flag is absent, and a blank phrase from either names
     /// no seed — so a caller may keep a seed out of the process list

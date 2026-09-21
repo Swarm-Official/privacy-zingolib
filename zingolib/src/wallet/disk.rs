@@ -46,6 +46,9 @@ use pepper_sync::{
 /// the optional Orchard→Ironwood migration section.
 type WalletTail = (PriceList, Option<crate::wallet::migration::MigrationState>);
 
+// This tag identifies the fixed genesis and activation schedule in config.rs.
+const PRIVACY_TESTNET_TAG: u8 = 3;
+
 enum V40ChainField {
     Tag(u8),
     Name(String),
@@ -71,6 +74,7 @@ fn chain_type_from_tag(tag: u8) -> io::Result<ChainType> {
         0 => Ok(ChainType::Mainnet),
         1 => Ok(ChainType::Testnet),
         2 => Ok(ChainType::Regtest(ActivationHeights::default())),
+        PRIVACY_TESTNET_TAG => Ok(ChainType::CustomTestnet),
         other => Err(Error::new(
             ErrorKind::InvalidData,
             format!("invalid chain type index stored in wallet file: {}", other,),
@@ -83,6 +87,7 @@ fn chain_name_from_stored(stored: &str) -> io::Result<&'static str> {
         "main" => Ok("mainnet"),
         "test" => Ok("testnet"),
         "regtest" => Ok("regtest"),
+        crate::config::PRIVACY_TESTNET_NAME => Ok(crate::config::PRIVACY_TESTNET_NAME),
         other => Err(Error::new(
             ErrorKind::InvalidData,
             format!("invalid chain type stored in wallet file: {}", other,),
@@ -180,6 +185,7 @@ impl LightWallet {
             ChainType::Mainnet => 0,
             ChainType::Testnet => 1,
             ChainType::Regtest(_) => 2,
+            ChainType::CustomTestnet => PRIVACY_TESTNET_TAG,
         })?;
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.clone().into_entropy(),

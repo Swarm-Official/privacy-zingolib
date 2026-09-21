@@ -973,9 +973,10 @@ impl LightClient {
                  correlate synchronization with migration activity"
             );
         }
-        Ok(transmission_route::RoutedTransmissionClient::new(
-            wire, candidates,
-        ))
+        Ok(
+            transmission_route::RoutedTransmissionClient::new(wire, candidates)
+                .with_chain(self.chain_type()),
+        )
     }
 
     /// Materializes and transmits every part whose bucket window is open.

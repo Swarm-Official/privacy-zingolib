@@ -58,6 +58,7 @@ pub fn get_zennies_for_zingo_address(chain_type: ChainType) -> &'static str {
     match chain_type {
         ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
         ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+        ChainType::CustomTestnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
         ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
     }
 }

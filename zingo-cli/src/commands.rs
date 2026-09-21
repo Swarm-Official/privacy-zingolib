@@ -1002,6 +1002,7 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
+                zingolib::config::ChainType::CustomTestnet => zingolib::config::PRIVACY_TESTNET_NAME,
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };
@@ -1168,6 +1169,9 @@ pub enum NetworkCommandError {
     #[cfg(feature = "clearnet-test-mode")]
     #[error("no indexer could be resolved for going online")]
     ServerResolution(#[from] crate::server_select_clearnet::ResolveServerError),
+    #[cfg(feature = "clearnet-test-mode")]
+    #[error("configure an explicit Privacy testnet indexer before going online")]
+    PrivacyIndexerRequired,
     /// The `network on` consent act selected an indexer, but the connection
     /// failed; the session stays offline. Reachable only from the
     /// quarantined clearnet resolution.
@@ -1175,7 +1179,7 @@ pub enum NetworkCommandError {
     #[error("failed to connect to '{uri}' while switching to Online Mode")]
     GoOnline {
         uri: String,
-        source: zingolib::netutils::GetClientError,
+        source: zingolib::lightclient::error::LightClientError,
     },
     #[error("failed to start the nym proxy at '{path}'")]
     ProxyStart {
@@ -1502,6 +1506,9 @@ async fn network_command(
             // survives only under `clearnet-test-mode`.
             #[cfg(feature = "clearnet-test-mode")]
             let went_online = if lightclient.indexer_uri().is_none() {
+                if lightclient.chain_type() == zingolib::config::ChainType::CustomTestnet {
+                    return Err(NetworkCommandError::PrivacyIndexerRequired);
+                }
                 let (server, _ranked) =
                     crate::server_select_clearnet::resolve_ranked_server().await?;
                 lightclient

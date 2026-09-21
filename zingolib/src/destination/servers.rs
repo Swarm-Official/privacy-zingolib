@@ -35,7 +35,7 @@ impl Trust {
     pub fn remote_default(chain: &ChainType) -> Self {
         match chain {
             ChainType::Mainnet => Trust::Untrusted,
-            ChainType::Testnet | ChainType::Regtest(_) => Trust::Trusted,
+            ChainType::Testnet | ChainType::CustomTestnet | ChainType::Regtest(_) => Trust::Trusted,
         }
     }
 }
@@ -184,7 +184,7 @@ fn registry_chain(chain: &ChainType) -> Option<IndexerChain> {
     match chain {
         ChainType::Mainnet => Some(IndexerChain::Main),
         ChainType::Testnet => Some(IndexerChain::Test),
-        ChainType::Regtest(_) => None,
+        ChainType::CustomTestnet | ChainType::Regtest(_) => None,
     }
 }
 
@@ -550,6 +550,14 @@ mod tests {
 
     fn regtest() -> ChainType {
         ChainType::Regtest(crate::ActivationHeights::default())
+    }
+
+    #[test]
+    fn privacy_profile_uses_only_configured_destinations() {
+        let set = DestinationServerSet::for_chain(&ChainType::CustomTestnet, None, Vec::new());
+        assert!(set.registry.is_empty());
+        assert!(set.configured.is_empty());
+        assert!(set.draw(Transport::Clearnet, None, &Health::default()).is_err());
     }
 
     fn drawn(set: &DestinationServerSet, transport: Transport, sync: Option<&Uri>) -> Vec<Uri> {

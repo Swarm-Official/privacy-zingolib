@@ -47,11 +47,21 @@ impl MigrationWire {
 pub struct RoutedTransmissionClient {
     wire: MigrationWire,
     candidates: Vec<http::Uri>,
+    chain: crate::config::ChainType,
 }
 
 impl RoutedTransmissionClient {
     pub(crate) fn new(wire: MigrationWire, candidates: Vec<http::Uri>) -> Self {
-        RoutedTransmissionClient { wire, candidates }
+        RoutedTransmissionClient {
+            wire,
+            candidates,
+            chain: crate::config::ChainType::Mainnet,
+        }
+    }
+
+    pub(crate) fn with_chain(mut self, chain: crate::config::ChainType) -> Self {
+        self.chain = chain;
+        self
     }
 
     #[cfg(all(test, feature = "nym"))]
@@ -77,11 +87,18 @@ impl TransmissionClient for RoutedTransmissionClient {
         match &self.wire {
             MigrationWire::Clearnet => {
                 GrpcTransmissionClient::new(indexer.clone())
+                    .with_chain(self.chain)
                     .submit(raw_tx, expiry_height)
                     .await
             }
             #[cfg(feature = "nym")]
             MigrationWire::Mixnet(dial) => {
+                if self.chain == crate::config::ChainType::CustomTestnet {
+                    return Err(PartTransmissionError::Rejected(
+                        "Privacy testnet requires a directly verified indexer connection"
+                            .to_string(),
+                    ));
+                }
                 submit_over_socks5(dial, indexer, raw_tx, expiry_height).await
             }
         }

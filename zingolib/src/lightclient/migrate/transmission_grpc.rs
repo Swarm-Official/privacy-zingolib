@@ -19,13 +19,22 @@ pub(super) use zingo_netutils::time::MIGRATION_SUBMIT_TIMEOUT;
 /// Submits parts over gRPC and can do nothing else.
 pub struct GrpcTransmissionClient {
     uri: http::Uri,
+    chain: crate::config::ChainType,
 }
 
 impl GrpcTransmissionClient {
     /// A client submitting to `uri`, ideally the dedicated
     /// `migration_transmission_uri` rather than the synchronization endpoint.
     pub fn new(uri: http::Uri) -> Self {
-        GrpcTransmissionClient { uri }
+        GrpcTransmissionClient {
+            uri,
+            chain: crate::config::ChainType::Mainnet,
+        }
+    }
+
+    pub(super) fn with_chain(mut self, chain: crate::config::ChainType) -> Self {
+        self.chain = chain;
+        self
     }
 }
 
@@ -38,6 +47,9 @@ impl TransmissionClient for GrpcTransmissionClient {
         let mut indexer = zingo_netutils::GrpcIndexer::new(self.uri.clone())
             .await
             .map_err(|e| PartTransmissionError::Transport(e.to_string()))?;
+        crate::lightclient::network::verify_indexer(self.chain, &mut indexer)
+            .await
+            .map_err(|status| PartTransmissionError::Rejected(status.to_string()))?;
         let txid_hex = indexer
             .send_transaction(
                 RawTransaction {

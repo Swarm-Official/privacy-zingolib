@@ -45,6 +45,7 @@ pub mod indexer_history;
 pub mod migrate;
 #[cfg(feature = "nym")]
 mod mixnet;
+pub(crate) mod network;
 pub mod offline;
 pub mod propose;
 pub mod save;
@@ -253,6 +254,15 @@ impl LightClient {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
+        let mut checked_indexer = None;
+        if config.chain_type() == ChainType::CustomTestnet
+            && let Some(uri) = config.indexer_uri()
+        {
+            let mut indexer = zingo_netutils::GrpcIndexer::new(uri).await?;
+            network::verify_indexer(config.chain_type(), &mut indexer).await?;
+            checked_indexer = Some(indexer);
+        }
+
         let wallet = match config.wallet_config() {
             WalletConfig::Read => {
                 let buffer = BufReader::new(
@@ -283,10 +293,10 @@ impl LightClient {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
-        // No configured URI means the client starts offline; set_indexer_uri() connects later.
-        let indexer = match config.indexer_uri() {
-            Some(uri) => Some(zingo_netutils::GrpcIndexer::new(uri).await?),
-            None => None,
+        let indexer = match (checked_indexer, config.indexer_uri()) {
+            (Some(indexer), _) => Some(indexer),
+            (None, Some(uri)) => Some(zingo_netutils::GrpcIndexer::new(uri).await?),
+            (None, None) => None,
         };
 
         Ok(LightClient {
@@ -619,11 +629,10 @@ impl LightClient {
     ///
     /// Creates a new gRPC connection to the given URI. After this call the client is online and
     /// network operations such as [`Self::sync`] become available.
-    pub async fn set_indexer_uri(
-        &mut self,
-        server: http::Uri,
-    ) -> Result<(), zingo_netutils::GetClientError> {
-        self.indexer = Some(zingo_netutils::GrpcIndexer::new(server).await?);
+    pub async fn set_indexer_uri(&mut self, server: http::Uri) -> Result<(), LightClientError> {
+        let mut indexer = zingo_netutils::GrpcIndexer::new(server).await?;
+        network::verify_indexer(self.chain_type(), &mut indexer).await?;
+        self.indexer = Some(indexer);
         Ok(())
     }
 

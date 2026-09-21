@@ -32,6 +32,9 @@ impl LightClient {
     /// `sync_handle` field.
     // TODO: add realtime sync updates to zingo-cli when it can handle printing during user input
     pub async fn sync(&mut self) -> Result<(), LightClientError> {
+        if self.chain_type() == crate::config::ChainType::CustomTestnet {
+            self.verify_network().await?;
+        }
         if self.sync_mode() != SyncMode::NotRunning {
             return Err(LightClientError::SyncModeError(
                 SyncModeError::SyncAlreadyRunning,

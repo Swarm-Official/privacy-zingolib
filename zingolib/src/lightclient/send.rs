@@ -171,14 +171,17 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
 }
 
 /// A gRPC indexer as a [`TransmitTarget`].
-struct ClearnetTarget(zingo_netutils::GrpcIndexer);
+struct ClearnetTarget(zingo_netutils::GrpcIndexer, ChainType);
 
 impl ClearnetTarget {
     /// A target for `destination`, connecting on first use.
-    fn lazy(destination: http::Uri) -> Result<Self, zingo_net_diag::NetOpFailure> {
+    fn lazy(
+        destination: http::Uri,
+        chain: ChainType,
+    ) -> Result<Self, zingo_net_diag::NetOpFailure> {
         let host = crate::destination::Host::of_uri(&destination);
         zingo_netutils::GrpcIndexer::new_lazy(destination)
-            .map(ClearnetTarget)
+            .map(|indexer| ClearnetTarget(indexer, chain))
             .map_err(|error| {
                 zingo_net_diag::NetOpFailure::from_error(
                     zingo_net_diag::NetOpStage::RouteResolution,
@@ -210,7 +213,9 @@ impl TransmitTarget for ClearnetTarget {
     ) -> impl Future<Output = Result<String, zingo_netutils::Status>> + Send {
         let mut client = self.0.clone();
         let data = raw_tx.to_vec();
+        let chain = self.1;
         async move {
+            super::network::verify_indexer(chain, &mut client).await?;
             client
                 .send_transaction(RawTransaction { data, height }, DEFAULT_REQUEST_TIMEOUT)
                 .await
@@ -220,7 +225,14 @@ impl TransmitTarget for ClearnetTarget {
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
         let mut client = self.0.clone();
         let hash = txid.as_ref().to_vec();
+        let chain = self.1;
         async move {
+            if super::network::verify_indexer(chain, &mut client)
+                .await
+                .is_err()
+            {
+                return false;
+            }
             client
                 .get_transaction(
                     TxFilter {
@@ -325,6 +337,7 @@ impl Wire {
 
 /// The ambient state a transmission narrates through, records against, and paces itself by.
 struct TransmitContext<'a> {
+    chain: ChainType,
     progress: &'a TransmitProgressHandle,
     history: &'a IndexerHistoryHandle,
     retry_interval: std::time::Duration,
@@ -351,7 +364,7 @@ async fn transmit_one_transaction(
             rotate_transmit(
                 wire,
                 &draw,
-                ClearnetTarget::lazy,
+                |destination| ClearnetTarget::lazy(destination, context.chain),
                 ClearnetTarget::failure,
                 tx_bytes,
                 height,
@@ -385,7 +398,7 @@ async fn transmit_one_transaction(
             rotate_transmit(
                 wire,
                 &draw,
-                ClearnetTarget::lazy,
+                |destination| ClearnetTarget::lazy(destination, context.chain),
                 ClearnetTarget::failure,
                 tx_bytes,
                 height,
@@ -477,6 +490,9 @@ impl LightClient {
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         self.preflight_transmit()?;
+        if self.chain_type() == ChainType::CustomTestnet {
+            self.verify_network().await?;
+        }
         let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
         // An Indexerless calculation cannot trust the wallet's stale chain
@@ -531,6 +547,9 @@ impl LightClient {
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         self.require_indexer()?;
+        if self.chain_type() == ChainType::CustomTestnet {
+            self.verify_network().await?;
+        }
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
             let reports = match proposal {
@@ -907,6 +926,9 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        if self.chain_type() == ChainType::CustomTestnet {
+            self.verify_network().await?;
+        }
         let indexer = self.indexer.clone();
 
         // Resolve the send route once for the whole send (ADR 0011), under
@@ -938,6 +960,12 @@ impl LightClient {
         };
         #[cfg(not(feature = "nym"))]
         let wire = Wire::Clearnet;
+        if self.chain_type() == ChainType::CustomTestnet && wire.is_mixnet() {
+            return Err(zingo_netutils::Status::failed_precondition(
+                "Privacy testnet requires a directly verified indexer connection",
+            )
+            .into());
+        }
         if !wire.is_mixnet() && indexer.is_none() {
             return Err(LightClientError::Offline);
         }
@@ -981,6 +1009,7 @@ impl LightClient {
 
             let dispatched = std::time::Instant::now();
             let transmit_context = TransmitContext {
+                chain: self.chain_type(),
                 progress: &progress,
                 history: &history,
                 retry_interval: self.transmit_retry_interval,
@@ -1208,6 +1237,7 @@ mod transmit_error_seam {
             ARBITRARY_HEIGHT,
             &TxId::from_bytes([0u8; 32]),
             &TransmitContext {
+                chain: ChainType::Mainnet,
                 progress: &progress,
                 history: &history,
                 retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,

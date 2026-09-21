@@ -49,6 +49,31 @@ pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
 /// testnet (unlike mainnet, where its activation is still scheduled).
 pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 
+/// The fixed Privacy testnet profile's first spendable block and upgrade height.
+pub const PRIVACY_TESTNET_BIRTHDAY: u32 = 1;
+/// The fixed Privacy testnet's display-order genesis hash.
+pub const PRIVACY_TESTNET_GENESIS: &str =
+    "01d6e85dd3c1c128941a849c5025cd2e437258811a2551b82aefd68686c982e1";
+/// The indexer and wallet identity for the fixed Privacy testnet profile.
+pub const PRIVACY_TESTNET_NAME: &str = "privacy-testnet";
+
+/// The upgrade schedule bound to [`PRIVACY_TESTNET_GENESIS`].
+pub fn privacy_testnet_activation_heights() -> ActivationHeights {
+    let height = Some(PRIVACY_TESTNET_BIRTHDAY);
+    ActivationHeights::builder()
+        .set_overwinter(height)
+        .set_sapling(height)
+        .set_blossom(height)
+        .set_heartwood(height)
+        .set_canopy(height)
+        .set_nu5(height)
+        .set_nu6(height)
+        .set_nu6_1(height)
+        .set_nu6_2(height)
+        .set_nu6_3(height)
+        .build()
+}
+
 /// Returns the Library Birthday for the given chain: a block height known to
 /// have been mined before this zingolib release was cut, safe as the
 /// [`WalletConfig::NewSeed`] `chain_height` for a wallet created while
@@ -61,6 +86,7 @@ pub fn lib_birthday(chain: ChainType) -> u32 {
     match chain {
         ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
         ChainType::Testnet => LIB_BIRTHDAY_TESTNET,
+        ChainType::CustomTestnet => PRIVACY_TESTNET_BIRTHDAY,
         // A regtest chain is born alongside its wallets; scanning from
         // genesis is both correct and cheap.
         ChainType::Regtest(_) => 1,
@@ -74,6 +100,8 @@ pub enum ChainType {
     Mainnet,
     /// Testnet
     Testnet,
+    /// The fixed Privacy testnet profile, identified by [`PRIVACY_TESTNET_GENESIS`].
+    CustomTestnet,
     /// Regtest
     Regtest(ActivationHeights),
 }
@@ -83,6 +111,7 @@ impl std::fmt::Display for ChainType {
         let chain = match self {
             ChainType::Mainnet => "mainnet",
             ChainType::Testnet => "testnet",
+            ChainType::CustomTestnet => PRIVACY_TESTNET_NAME,
             ChainType::Regtest(_) => "regtest",
         };
         write!(f, "{chain}")
@@ -96,6 +125,7 @@ impl TryFrom<&str> for ChainType {
         match value {
             "mainnet" => Ok(ChainType::Mainnet),
             "testnet" => Ok(ChainType::Testnet),
+            PRIVACY_TESTNET_NAME => Ok(ChainType::CustomTestnet),
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
             _ => Err(InvalidChainType(value.to_string())),
         }
@@ -114,6 +144,7 @@ pub(crate) mod consealed {
             match self {
                 ChainType::Mainnet => NetworkType::Main,
                 ChainType::Testnet => NetworkType::Test,
+                ChainType::CustomTestnet => NetworkType::Test,
                 ChainType::Regtest(_) => NetworkType::Regtest,
             }
         }
@@ -122,6 +153,10 @@ pub(crate) mod consealed {
             match self {
                 ChainType::Mainnet => MAIN_NETWORK.activation_height(nu),
                 ChainType::Testnet => TEST_NETWORK.activation_height(nu),
+                ChainType::CustomTestnet => {
+                    ChainType::Regtest(super::privacy_testnet_activation_heights())
+                        .activation_height(nu)
+                }
                 ChainType::Regtest(activation_heights) => match nu {
                     NetworkUpgrade::Overwinter => {
                         activation_heights.overwinter().map(BlockHeight::from_u32)
@@ -151,7 +186,7 @@ pub(crate) mod consealed {
 
 /// Invalid chain type.
 #[derive(thiserror::Error, Debug)]
-#[error("Invalid chain type '{0}'. Expected one of: 'mainnet', 'testnet' or 'regtest'.")]
+#[error("Invalid chain type '{0}'. Expected 'mainnet', 'testnet', 'privacy-testnet' or 'regtest'.")]
 pub struct InvalidChainType(String);
 
 /// Configuration data for the construction of a [`crate::wallet::LightWallet`].
@@ -203,8 +238,11 @@ impl WalletConfig {
                 let sapling_activation_height = chain_type
                     .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
                     .expect("should have some sapling activation height");
-                let birthday =
-                    sapling_activation_height.max(BlockHeight::from_u32(chain_height) - 100);
+                let birthday = if chain_type == ChainType::CustomTestnet {
+                    BlockHeight::from_u32(PRIVACY_TESTNET_BIRTHDAY)
+                } else {
+                    sapling_activation_height.max(BlockHeight::from_u32(chain_height) - 100)
+                };
 
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: Mnemonic::<English>::generate(bip0039::Count::Words24)
@@ -553,6 +591,7 @@ fn wallet_dir_or_default(
                 match chain {
                     ChainType::Mainnet => {}
                     ChainType::Testnet => dir.push("testnet3"),
+                    ChainType::CustomTestnet => dir.push(PRIVACY_TESTNET_NAME),
                     ChainType::Regtest(_) => dir.push("regtest"),
                 }
 
@@ -583,6 +622,69 @@ pub enum ClientConfigError {
 #[cfg(test)]
 mod tests {
     use crate::config::{ChainType, ClientConfig};
+
+    #[test]
+    fn privacy_profile_keeps_test_encoding_and_early_upgrades() {
+        use super::{PRIVACY_TESTNET_BIRTHDAY, PRIVACY_TESTNET_NAME};
+        use zcash_protocol::consensus::{
+            BlockHeight, BranchId, NetworkType, NetworkUpgrade, Parameters,
+        };
+
+        let chain = ChainType::CustomTestnet;
+        let activation = BlockHeight::from_u32(PRIVACY_TESTNET_BIRTHDAY);
+        assert_eq!(ChainType::try_from(PRIVACY_TESTNET_NAME).unwrap(), chain);
+        assert_eq!(chain.to_string(), PRIVACY_TESTNET_NAME);
+        assert_eq!(chain.network_type(), NetworkType::Test);
+        assert_eq!(super::lib_birthday(chain), PRIVACY_TESTNET_BIRTHDAY);
+        for upgrade in [
+            NetworkUpgrade::Overwinter,
+            NetworkUpgrade::Sapling,
+            NetworkUpgrade::Blossom,
+            NetworkUpgrade::Heartwood,
+            NetworkUpgrade::Canopy,
+            NetworkUpgrade::Nu5,
+            NetworkUpgrade::Nu6,
+            NetworkUpgrade::Nu6_1,
+            NetworkUpgrade::Nu6_2,
+            NetworkUpgrade::Nu6_3,
+        ] {
+            assert_eq!(chain.activation_height(upgrade), Some(activation));
+        }
+        assert_eq!(BranchId::for_height(&chain, activation), BranchId::Nu6_3);
+        assert_ne!(chain, ChainType::Testnet);
+    }
+
+    #[test]
+    fn privacy_wallet_disk_identity_and_birthday_roundtrip() {
+        use super::{PRIVACY_TESTNET_BIRTHDAY, WalletConfig};
+        use crate::wallet::{LightWallet, WalletSettings};
+
+        let chain = ChainType::CustomTestnet;
+        let mut wallet = LightWallet::new(
+            chain,
+            WalletConfig::NewSeed {
+                no_of_accounts: std::num::NonZeroU32::MIN,
+                chain_height: PRIVACY_TESTNET_BIRTHDAY,
+                wallet_settings: WalletSettings::default(),
+            },
+        )
+        .unwrap();
+        assert_eq!(u32::from(wallet.birthday()), PRIVACY_TESTNET_BIRTHDAY);
+        let mut bytes = Vec::new();
+        wallet.write(&mut bytes, &chain).unwrap();
+        let restored = LightWallet::read(bytes.as_slice(), chain).unwrap();
+        assert_eq!(restored.chain_type(), chain);
+        assert_eq!(u32::from(restored.birthday()), PRIVACY_TESTNET_BIRTHDAY);
+        assert!(LightWallet::read(bytes.as_slice(), ChainType::Testnet).is_err());
+        assert!(LightWallet::read(bytes.as_slice(), ChainType::Mainnet).is_err());
+        assert!(
+            LightWallet::read(
+                bytes.as_slice(),
+                ChainType::Regtest(crate::ActivationHeights::default())
+            )
+            .is_err()
+        );
+    }
 
     #[tokio::test]
     async fn test_load_clientconfig() {
