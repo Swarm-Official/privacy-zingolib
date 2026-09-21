@@ -64,17 +64,17 @@ pub const SWARM_TESTNET_GENESIS_PLACEHOLDER: &str =
 
 /// The one place SwarmTestnet's display-order genesis hash is written.
 ///
-/// This is the real hash. It comes from `network/swarm-testnet/manifest.json`
-/// in the project repository, whose generator produced it byte-identically
-/// four times — twice natively on Windows into fresh folders, and again from
-/// the ubuntu-22.04 and windows-latest CI jobs of
-/// <https://github.com/brs-holding/privacy-zebra/actions/runs/35620844481>.
+/// This is the real hash, from `network/swarm-testnet/manifest.json` in the
+/// project repository. Its block is stamped 2026-09-21T12:00:00Z, in the past,
+/// so the chain can produce block 1 immediately. An earlier genesis carrying a
+/// future timestamp was discarded for exactly that reason: a wallet pinned to
+/// it would have synced nothing, with nothing to report.
 ///
 /// Everything that identifies the network — the indexer check, the wallet
 /// profile, the tests, the desktop wallet's build-time verification — reads it
 /// from here and nowhere else.
 pub const SWARM_TESTNET_GENESIS: &str =
-    "06b0b56c0dcf8695df0192439b73038006c48e3b1a7b907ecee69ef412d440fc";
+    "045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28";
 
 /// The light-wallet chain label SwarmTestnet's indexer reports, which is also
 /// this profile's wallet identity and data-directory name.

@@ -6,7 +6,9 @@
 
 `SWARM_TESTNET_GENESIS` in `zingolib/src/config.rs` is the only place the genesis hash is written. Everything else — the indexer identity check, the wallet profile, the tests, the desktop wallet's build-time verification — reads it from there.
 
-It is `06b0b56c0dcf8695df0192439b73038006c48e3b1a7b907ecee69ef412d440fc`, taken from `network/swarm-testnet/manifest.json` in the project repository. Its generator reproduced it byte-identically four times: twice natively on Windows into fresh folders, and again from the ubuntu-22.04 and windows-latest CI jobs of [run 35620844481](https://github.com/brs-holding/privacy-zebra/actions/runs/35620844481).
+It is `045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28`, taken from `network/swarm-testnet/manifest.json` in the project repository, where the block is stamped `2026-09-21T12:00:00Z`.
+
+That timestamp matters as much as the hash. An earlier genesis was generated with a time seven hours in the future and discarded: the chain would have produced no block 1 until that moment arrived, and a wallet pinned to it would have synced nothing while reporting nothing wrong. The desktop wallet's pin check now refuses a manifest whose genesis is stamped in the future.
 
 `SWARM_TESTNET_GENESIS_PLACEHOLDER` stays defined and `swarm_testnet_genesis_is_placeholder()` still answers whether a build carries it. That gate is what refused a release build while the network had no genesis block, and it stays so a stand-in can never be shipped by accident.
 
