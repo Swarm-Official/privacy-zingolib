@@ -962,7 +962,7 @@ impl LightClient {
         let wire = Wire::Clearnet;
         if self.chain_type() == ChainType::CustomTestnet && wire.is_mixnet() {
             return Err(zingo_netutils::Status::failed_precondition(
-                "Privacy testnet requires a directly verified indexer connection",
+                "SWARM testnet requires a directly verified indexer connection",
             )
             .into());
         }

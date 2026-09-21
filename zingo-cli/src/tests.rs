@@ -866,16 +866,16 @@ mod config_template {
 
     #[cfg(feature = "clearnet-test-mode")]
     #[test]
-    fn privacy_online_requires_an_explicit_indexer() {
+    fn swarm_online_requires_an_explicit_indexer() {
         let error = fill(&[
             examples::BIN_NAME,
             "--online",
             "--chain",
-            zingolib::config::PRIVACY_TESTNET_NAME,
+            zingolib::config::SWARM_TESTNET_NAME,
         ])
         .err()
         .unwrap();
-        assert_eq!(error, "provide --server for Privacy testnet");
+        assert_eq!(error, "provide --server for SWARM testnet");
     }
 
     /// HYPOTHESIS: the flag outranks the environment, the environment

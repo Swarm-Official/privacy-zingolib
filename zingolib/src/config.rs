@@ -49,17 +49,56 @@ pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
 /// testnet (unlike mainnet, where its activation is still scheduled).
 pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 
-/// The fixed Privacy testnet profile's first spendable block and upgrade height.
-pub const PRIVACY_TESTNET_BIRTHDAY: u32 = 1;
-/// The fixed Privacy testnet's display-order genesis hash.
-pub const PRIVACY_TESTNET_GENESIS: &str =
-    "01d6e85dd3c1c128941a849c5025cd2e437258811a2551b82aefd68686c982e1";
-/// The indexer and wallet identity for the fixed Privacy testnet profile.
-pub const PRIVACY_TESTNET_NAME: &str = "privacy-testnet";
+/// The fixed SwarmTestnet profile's first spendable block and upgrade height.
+pub const SWARM_TESTNET_BIRTHDAY: u32 = 1;
 
-/// The upgrade schedule bound to [`PRIVACY_TESTNET_GENESIS`].
-pub fn privacy_testnet_activation_heights() -> ActivationHeights {
-    let height = Some(PRIVACY_TESTNET_BIRTHDAY);
+/// The stand-in written here until SwarmTestnet's genesis block exists.
+///
+/// It is the ASCII text `SWARMTESTNETGENESISPLACEHOLDER!!` in hexadecimal, so
+/// a hex dump of anything carrying it reads as what it is. No block can hash
+/// to it, which is the point: a build that still carries this value cannot be
+/// mistaken for one that talks to the real network, and
+/// [`swarm_testnet_genesis_is_placeholder`] lets a release gate say so.
+pub const SWARM_TESTNET_GENESIS_PLACEHOLDER: &str =
+    "535741524d544553544e455447454e45534953504c414345484f4c4445522121";
+
+/// The one place SwarmTestnet's display-order genesis hash is written.
+///
+/// Replacing this constant with the hash the genesis generator produces, and
+/// nothing else, re-points the whole SDK — indexer identity check, wallet
+/// profile and every test — at the real network.
+pub const SWARM_TESTNET_GENESIS: &str = SWARM_TESTNET_GENESIS_PLACEHOLDER;
+
+/// The light-wallet chain label SwarmTestnet's indexer reports, which is also
+/// this profile's wallet identity and data-directory name.
+pub const SWARM_TESTNET_NAME: &str = "swarm-testnet";
+
+/// Whether this build still carries [`SWARM_TESTNET_GENESIS_PLACEHOLDER`]
+/// rather than a real genesis hash. Release gates refuse a build for which
+/// this is true.
+#[must_use]
+pub const fn swarm_testnet_genesis_is_placeholder() -> bool {
+    // `str::eq` is not const, so compare the bytes the two constants hold.
+    let (configured, placeholder) = (
+        SWARM_TESTNET_GENESIS.as_bytes(),
+        SWARM_TESTNET_GENESIS_PLACEHOLDER.as_bytes(),
+    );
+    if configured.len() != placeholder.len() {
+        return false;
+    }
+    let mut index = 0;
+    while index < configured.len() {
+        if configured[index] != placeholder[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// The upgrade schedule bound to [`SWARM_TESTNET_GENESIS`].
+pub fn swarm_testnet_activation_heights() -> ActivationHeights {
+    let height = Some(SWARM_TESTNET_BIRTHDAY);
     ActivationHeights::builder()
         .set_overwinter(height)
         .set_sapling(height)
@@ -86,7 +125,7 @@ pub fn lib_birthday(chain: ChainType) -> u32 {
     match chain {
         ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
         ChainType::Testnet => LIB_BIRTHDAY_TESTNET,
-        ChainType::CustomTestnet => PRIVACY_TESTNET_BIRTHDAY,
+        ChainType::CustomTestnet => SWARM_TESTNET_BIRTHDAY,
         // A regtest chain is born alongside its wallets; scanning from
         // genesis is both correct and cheap.
         ChainType::Regtest(_) => 1,
@@ -100,7 +139,10 @@ pub enum ChainType {
     Mainnet,
     /// Testnet
     Testnet,
-    /// The fixed Privacy testnet profile, identified by [`PRIVACY_TESTNET_GENESIS`].
+    /// The project's own testnet: SwarmTestnet, labelled
+    /// [`SWARM_TESTNET_NAME`] and identified by [`SWARM_TESTNET_GENESIS`].
+    /// The variant name is deliberately generic — there is one custom-testnet
+    /// slot in this SDK and SwarmTestnet is what currently occupies it.
     CustomTestnet,
     /// Regtest
     Regtest(ActivationHeights),
@@ -111,7 +153,7 @@ impl std::fmt::Display for ChainType {
         let chain = match self {
             ChainType::Mainnet => "mainnet",
             ChainType::Testnet => "testnet",
-            ChainType::CustomTestnet => PRIVACY_TESTNET_NAME,
+            ChainType::CustomTestnet => SWARM_TESTNET_NAME,
             ChainType::Regtest(_) => "regtest",
         };
         write!(f, "{chain}")
@@ -125,7 +167,7 @@ impl TryFrom<&str> for ChainType {
         match value {
             "mainnet" => Ok(ChainType::Mainnet),
             "testnet" => Ok(ChainType::Testnet),
-            PRIVACY_TESTNET_NAME => Ok(ChainType::CustomTestnet),
+            SWARM_TESTNET_NAME => Ok(ChainType::CustomTestnet),
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
             _ => Err(InvalidChainType(value.to_string())),
         }
@@ -154,7 +196,7 @@ pub(crate) mod consealed {
                 ChainType::Mainnet => MAIN_NETWORK.activation_height(nu),
                 ChainType::Testnet => TEST_NETWORK.activation_height(nu),
                 ChainType::CustomTestnet => {
-                    ChainType::Regtest(super::privacy_testnet_activation_heights())
+                    ChainType::Regtest(super::swarm_testnet_activation_heights())
                         .activation_height(nu)
                 }
                 ChainType::Regtest(activation_heights) => match nu {
@@ -186,7 +228,7 @@ pub(crate) mod consealed {
 
 /// Invalid chain type.
 #[derive(thiserror::Error, Debug)]
-#[error("Invalid chain type '{0}'. Expected 'mainnet', 'testnet', 'privacy-testnet' or 'regtest'.")]
+#[error("Invalid chain type '{0}'. Expected 'mainnet', 'testnet', 'swarm-testnet' or 'regtest'.")]
 pub struct InvalidChainType(String);
 
 /// Configuration data for the construction of a [`crate::wallet::LightWallet`].
@@ -239,7 +281,7 @@ impl WalletConfig {
                     .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
                     .expect("should have some sapling activation height");
                 let birthday = if chain_type == ChainType::CustomTestnet {
-                    BlockHeight::from_u32(PRIVACY_TESTNET_BIRTHDAY)
+                    BlockHeight::from_u32(SWARM_TESTNET_BIRTHDAY)
                 } else {
                     sapling_activation_height.max(BlockHeight::from_u32(chain_height) - 100)
                 };
@@ -591,7 +633,7 @@ fn wallet_dir_or_default(
                 match chain {
                     ChainType::Mainnet => {}
                     ChainType::Testnet => dir.push("testnet3"),
-                    ChainType::CustomTestnet => dir.push(PRIVACY_TESTNET_NAME),
+                    ChainType::CustomTestnet => dir.push(SWARM_TESTNET_NAME),
                     ChainType::Regtest(_) => dir.push("regtest"),
                 }
 
@@ -624,18 +666,18 @@ mod tests {
     use crate::config::{ChainType, ClientConfig};
 
     #[test]
-    fn privacy_profile_keeps_test_encoding_and_early_upgrades() {
-        use super::{PRIVACY_TESTNET_BIRTHDAY, PRIVACY_TESTNET_NAME};
+    fn swarm_profile_keeps_test_encoding_and_early_upgrades() {
+        use super::{SWARM_TESTNET_BIRTHDAY, SWARM_TESTNET_NAME};
         use zcash_protocol::consensus::{
             BlockHeight, BranchId, NetworkType, NetworkUpgrade, Parameters,
         };
 
         let chain = ChainType::CustomTestnet;
-        let activation = BlockHeight::from_u32(PRIVACY_TESTNET_BIRTHDAY);
-        assert_eq!(ChainType::try_from(PRIVACY_TESTNET_NAME).unwrap(), chain);
-        assert_eq!(chain.to_string(), PRIVACY_TESTNET_NAME);
+        let activation = BlockHeight::from_u32(SWARM_TESTNET_BIRTHDAY);
+        assert_eq!(ChainType::try_from(SWARM_TESTNET_NAME).unwrap(), chain);
+        assert_eq!(chain.to_string(), SWARM_TESTNET_NAME);
         assert_eq!(chain.network_type(), NetworkType::Test);
-        assert_eq!(super::lib_birthday(chain), PRIVACY_TESTNET_BIRTHDAY);
+        assert_eq!(super::lib_birthday(chain), SWARM_TESTNET_BIRTHDAY);
         for upgrade in [
             NetworkUpgrade::Overwinter,
             NetworkUpgrade::Sapling,
@@ -655,8 +697,8 @@ mod tests {
     }
 
     #[test]
-    fn privacy_wallet_disk_identity_and_birthday_roundtrip() {
-        use super::{PRIVACY_TESTNET_BIRTHDAY, WalletConfig};
+    fn swarm_wallet_disk_identity_and_birthday_roundtrip() {
+        use super::{SWARM_TESTNET_BIRTHDAY, WalletConfig};
         use crate::wallet::{LightWallet, WalletSettings};
 
         let chain = ChainType::CustomTestnet;
@@ -664,17 +706,17 @@ mod tests {
             chain,
             WalletConfig::NewSeed {
                 no_of_accounts: std::num::NonZeroU32::MIN,
-                chain_height: PRIVACY_TESTNET_BIRTHDAY,
+                chain_height: SWARM_TESTNET_BIRTHDAY,
                 wallet_settings: WalletSettings::default(),
             },
         )
         .unwrap();
-        assert_eq!(u32::from(wallet.birthday()), PRIVACY_TESTNET_BIRTHDAY);
+        assert_eq!(u32::from(wallet.birthday()), SWARM_TESTNET_BIRTHDAY);
         let mut bytes = Vec::new();
         wallet.write(&mut bytes, &chain).unwrap();
         let restored = LightWallet::read(bytes.as_slice(), chain).unwrap();
         assert_eq!(restored.chain_type(), chain);
-        assert_eq!(u32::from(restored.birthday()), PRIVACY_TESTNET_BIRTHDAY);
+        assert_eq!(u32::from(restored.birthday()), SWARM_TESTNET_BIRTHDAY);
         assert!(LightWallet::read(bytes.as_slice(), ChainType::Testnet).is_err());
         assert!(LightWallet::read(bytes.as_slice(), ChainType::Mainnet).is_err());
         assert!(
@@ -683,6 +725,45 @@ mod tests {
                 ChainType::Regtest(crate::ActivationHeights::default())
             )
             .is_err()
+        );
+
+        // A wallet file written by the retired Privacy Testnet build carries
+        // chain tag 3, the byte that follows the u64 version word. Opening one
+        // here would scan it against SwarmTestnet and save that state back
+        // over it, so it is refused by name.
+        let mut retired = bytes.clone();
+        retired[8] = 3;
+        let refusal = LightWallet::read(retired.as_slice(), chain)
+            .err()
+            .expect("a Privacy Testnet wallet file is not a SwarmTestnet wallet file");
+        assert!(
+            refusal.to_string().contains("Privacy Testnet"),
+            "the refusal should name the network the file belongs to: {refusal}"
+        );
+    }
+
+    /// Until SwarmTestnet's genesis block exists this build carries a stand-in
+    /// that no block can hash to, and release gates read that from here.
+    #[test]
+    fn swarm_genesis_is_a_declared_placeholder_of_the_right_shape() {
+        use super::{
+            SWARM_TESTNET_GENESIS, SWARM_TESTNET_GENESIS_PLACEHOLDER,
+            swarm_testnet_genesis_is_placeholder,
+        };
+
+        assert_eq!(SWARM_TESTNET_GENESIS.len(), 64);
+        assert!(
+            SWARM_TESTNET_GENESIS
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
+        assert_eq!(
+            swarm_testnet_genesis_is_placeholder(),
+            SWARM_TESTNET_GENESIS == SWARM_TESTNET_GENESIS_PLACEHOLDER
+        );
+        assert_eq!(
+            String::from_utf8(hex::decode(SWARM_TESTNET_GENESIS_PLACEHOLDER).unwrap()).unwrap(),
+            "SWARMTESTNETGENESISPLACEHOLDER!!"
         );
     }
 

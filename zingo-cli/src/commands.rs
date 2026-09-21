@@ -1002,7 +1002,7 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
-                zingolib::config::ChainType::CustomTestnet => zingolib::config::PRIVACY_TESTNET_NAME,
+                zingolib::config::ChainType::CustomTestnet => zingolib::config::SWARM_TESTNET_NAME,
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };
@@ -1170,8 +1170,8 @@ pub enum NetworkCommandError {
     #[error("no indexer could be resolved for going online")]
     ServerResolution(#[from] crate::server_select_clearnet::ResolveServerError),
     #[cfg(feature = "clearnet-test-mode")]
-    #[error("configure an explicit Privacy testnet indexer before going online")]
-    PrivacyIndexerRequired,
+    #[error("configure an explicit SWARM testnet indexer before going online")]
+    SwarmIndexerRequired,
     /// The `network on` consent act selected an indexer, but the connection
     /// failed; the session stays offline. Reachable only from the
     /// quarantined clearnet resolution.
@@ -1507,7 +1507,7 @@ async fn network_command(
             #[cfg(feature = "clearnet-test-mode")]
             let went_online = if lightclient.indexer_uri().is_none() {
                 if lightclient.chain_type() == zingolib::config::ChainType::CustomTestnet {
-                    return Err(NetworkCommandError::PrivacyIndexerRequired);
+                    return Err(NetworkCommandError::SwarmIndexerRequired);
                 }
                 let (server, _ranked) =
                     crate::server_select_clearnet::resolve_ranked_server().await?;

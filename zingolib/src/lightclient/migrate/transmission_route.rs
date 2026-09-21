@@ -95,7 +95,7 @@ impl TransmissionClient for RoutedTransmissionClient {
             MigrationWire::Mixnet(dial) => {
                 if self.chain == crate::config::ChainType::CustomTestnet {
                     return Err(PartTransmissionError::Rejected(
-                        "Privacy testnet requires a directly verified indexer connection"
+                        "SWARM testnet requires a directly verified indexer connection"
                             .to_string(),
                     ));
                 }

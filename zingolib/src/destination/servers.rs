@@ -553,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn privacy_profile_uses_only_configured_destinations() {
+    fn swarm_profile_uses_only_configured_destinations() {
         let set = DestinationServerSet::for_chain(&ChainType::CustomTestnet, None, Vec::new());
         assert!(set.registry.is_empty());
         assert!(set.configured.is_empty());

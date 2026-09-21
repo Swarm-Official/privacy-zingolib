@@ -47,6 +47,17 @@ use pepper_sync::{
 type WalletTail = (PriceList, Option<crate::wallet::migration::MigrationState>);
 
 // This tag identifies the fixed genesis and activation schedule in config.rs.
+//
+// 5, not 3. Tag 3 was the retired Privacy Testnet, whose wallet files are on
+// this machine and may hold the owner's own coins. SwarmTestnet has a
+// different genesis, so reading one of those files here would open a wallet
+// against the wrong chain and then write SwarmTestnet's scan state back over
+// it. Its own tag makes that a refusal instead (see `chain_type_from_tag`).
+// 4 is skipped as well: the version 40 reader separates a chain tag from a
+// chain-name string on that same byte, where 4 and 7 are string lengths.
+const SWARM_TESTNET_TAG: u8 = 5;
+
+// Retired: the Privacy Testnet profile this one replaces.
 const PRIVACY_TESTNET_TAG: u8 = 3;
 
 enum V40ChainField {
@@ -74,7 +85,13 @@ fn chain_type_from_tag(tag: u8) -> io::Result<ChainType> {
         0 => Ok(ChainType::Mainnet),
         1 => Ok(ChainType::Testnet),
         2 => Ok(ChainType::Regtest(ActivationHeights::default())),
-        PRIVACY_TESTNET_TAG => Ok(ChainType::CustomTestnet),
+        SWARM_TESTNET_TAG => Ok(ChainType::CustomTestnet),
+        PRIVACY_TESTNET_TAG => Err(Error::new(
+            ErrorKind::InvalidData,
+            "this wallet file belongs to the retired Privacy Testnet, not to SwarmTestnet; \
+             open it with the Privacy Wallet Testnet build that created it"
+                .to_string(),
+        )),
         other => Err(Error::new(
             ErrorKind::InvalidData,
             format!("invalid chain type index stored in wallet file: {}", other,),
@@ -87,7 +104,7 @@ fn chain_name_from_stored(stored: &str) -> io::Result<&'static str> {
         "main" => Ok("mainnet"),
         "test" => Ok("testnet"),
         "regtest" => Ok("regtest"),
-        crate::config::PRIVACY_TESTNET_NAME => Ok(crate::config::PRIVACY_TESTNET_NAME),
+        crate::config::SWARM_TESTNET_NAME => Ok(crate::config::SWARM_TESTNET_NAME),
         other => Err(Error::new(
             ErrorKind::InvalidData,
             format!("invalid chain type stored in wallet file: {}", other,),
@@ -185,7 +202,7 @@ impl LightWallet {
             ChainType::Mainnet => 0,
             ChainType::Testnet => 1,
             ChainType::Regtest(_) => 2,
-            ChainType::CustomTestnet => PRIVACY_TESTNET_TAG,
+            ChainType::CustomTestnet => SWARM_TESTNET_TAG,
         })?;
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.clone().into_entropy(),

@@ -69,7 +69,7 @@ pub fn build_clap_app() -> clap::Command {
                 .long("chain").short('c')
                 .value_name("CHAIN")
                 .help(
-                    r#"What chain to expect. One of "mainnet", "testnet", "privacy-testnet", or "regtest". Defaults to "mainnet""#
+                    r#"What chain to expect. One of "mainnet", "testnet", "swarm-testnet", or "regtest". Defaults to "mainnet""#
                 ))
             .arg(Arg::new("seed")
                 .short('s')
@@ -567,7 +567,7 @@ fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) -> Exit
     let chain_name = match cli_config.chaintype {
         ChainType::Mainnet => "main",
         ChainType::Testnet => "test",
-        ChainType::CustomTestnet => zingolib::config::PRIVACY_TESTNET_NAME,
+        ChainType::CustomTestnet => zingolib::config::SWARM_TESTNET_NAME,
         ChainType::Regtest(_) => "regtest",
     };
 
@@ -1132,8 +1132,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     #[error(transparent)]
     ResolveServer(#[from] server_select_clearnet::ResolveServerError),
     #[cfg(feature = "clearnet-test-mode")]
-    #[error("provide --server for Privacy testnet")]
-    PrivacyIndexerRequired,
+    #[error("provide --server for SWARM testnet")]
+    SwarmIndexerRequired,
     /// The pinned `--server` is not a valid indexer URI.
     #[cfg(not(feature = "clearnet-test-mode"))]
     #[error("invalid --server URI.")]
@@ -1208,10 +1208,10 @@ impl CliConfigTemplate {
             Communications::Online => {
                 if matches
                     .get_one::<String>("chain")
-                    .is_some_and(|chain| chain == zingolib::config::PRIVACY_TESTNET_NAME)
+                    .is_some_and(|chain| chain == zingolib::config::SWARM_TESTNET_NAME)
                     && matches.get_one::<http::Uri>("server").is_none()
                 {
-                    return Err(ConfigTemplateError::PrivacyIndexerRequired);
+                    return Err(ConfigTemplateError::SwarmIndexerRequired);
                 }
                 let (server, ranked_servers) = server_select_clearnet::resolve_server(&matches)?;
                 (Some(server), ranked_servers)
