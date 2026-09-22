@@ -257,6 +257,13 @@ impl LightWallet {
                     value,
                     fee,
                     zec_price: None,
+                    // The transaction itself says so: a coinbase spends a
+                    // single null outpoint. The same test the coinbase
+                    // maturity rule in balance.rs already uses.
+                    is_coinbase: transaction
+                        .transaction()
+                        .transparent_bundle()
+                        .is_some_and(|bundle| bundle.is_coinbase()),
                     pools_sent_from,
                     ironwood_notes,
                     orchard_notes,

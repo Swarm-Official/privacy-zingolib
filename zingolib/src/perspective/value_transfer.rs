@@ -93,6 +93,14 @@ pub struct ValueTransfer {
     /// transfers, and the pools of all self-received outputs for send-to-self transfers.
     pub pools_received: Vec<PoolType>,
     pub memos: Vec<String>,
+    /// Whether the transaction this value transfer belongs to is a block's
+    /// coinbase, and so a mined reward rather than a payment from anyone.
+    ///
+    /// Transaction-level, like [`Self::transaction_fee`]: the same for every
+    /// value transfer of a txid. Consumers cannot work this out for
+    /// themselves — a mined reward and an ordinary payment with no memo look
+    /// identical from the outside — so it is stated.
+    pub is_coinbase: bool,
 }
 
 impl ValueTransfer {
@@ -120,6 +128,7 @@ impl ValueTransfer {
             pools_sent_from: transaction.pools_sent_from.clone(),
             pools_received,
             memos,
+            is_coinbase: transaction.is_coinbase,
         }
     }
 }
@@ -215,8 +224,43 @@ impl From<ValueTransfer> for JsonValue {
             "recipient_address" => value_transfer.recipient_address,
             "pools_sent_from" => pools_to_json(&value_transfer.pools_sent_from),
             "pools_received" => pools_to_json(&value_transfer.pools_received),
-            "memos" => value_transfer.memos
+            "memos" => value_transfer.memos,
+            "is_coinbase" => value_transfer.is_coinbase
         }
+    }
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+
+    /// The field a consumer reads to say "mined" instead of "received".
+    #[test]
+    fn the_json_states_whether_the_transfer_is_a_mined_reward() {
+        let transfer = ValueTransfer {
+            txid: TxId::from_bytes([0; 32]),
+            datetime: 0,
+            status: ConfirmationStatus::Confirmed(10u32.into()),
+            blockheight: 10u32.into(),
+            transaction_fee: None,
+            zec_price: None,
+            kind: ValueTransferKind::Received,
+            value: 625_000_000,
+            recipient_address: None,
+            pools_sent_from: vec![],
+            pools_received: vec![],
+            memos: vec![],
+            is_coinbase: true,
+        };
+
+        let mined = JsonValue::from(transfer.clone());
+        assert_eq!(mined["is_coinbase"], true);
+
+        let paid = JsonValue::from(ValueTransfer {
+            is_coinbase: false,
+            ..transfer
+        });
+        assert_eq!(paid["is_coinbase"], false);
     }
 }
 

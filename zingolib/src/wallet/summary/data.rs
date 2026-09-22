@@ -112,6 +112,18 @@ pub struct TransactionSummary {
     pub value: u64,
     pub fee: Option<u64>,
     pub zec_price: Option<f32>,
+    /// Whether this transaction is a block's coinbase — a mined reward.
+    ///
+    /// Read from the transaction itself: a coinbase has a single transparent
+    /// input spending a null outpoint, which is what
+    /// `TransparentBundle::is_coinbase` tests. The wallet already relied on
+    /// this to hold coinbase outputs back until they mature; it is stated here
+    /// so a consumer can say where the money came from instead of guessing.
+    ///
+    /// Guessing is the alternative and it does not work: a mined reward
+    /// arrives with no sender, no memo and no fee, and so does an ordinary
+    /// payment from someone who wrote nothing.
+    pub is_coinbase: bool,
     /// Pools of this wallet's outputs spent to fund this transaction.
     /// Empty for received transactions.
     pub pools_sent_from: Vec<PoolType>,
@@ -799,6 +811,7 @@ mod tests {
             value: 0,
             fee: Some(0),
             zec_price: None,
+            is_coinbase: false,
             pools_sent_from,
             ironwood_notes,
             orchard_notes,
@@ -808,6 +821,35 @@ mod tests {
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+        }
+    }
+
+    /// A mined reward and an ordinary payment are indistinguishable from the
+    /// outside — no sender, no memo, no fee on either — so the summary has to
+    /// carry the answer rather than leave a consumer to guess it. This asserts
+    /// the flag travels from the summary onto every value transfer built from
+    /// it, which is where the desktop wallet reads it.
+    #[test]
+    fn the_coinbase_flag_reaches_every_value_transfer_of_the_transaction() {
+        use crate::perspective::value_transfer::{ValueTransfer, ValueTransferKind};
+
+        let mined = TransactionSummary {
+            is_coinbase: true,
+            ..self_send_summary(vec![], vec![], vec![])
+        };
+        let paid = self_send_summary(vec![], vec![], vec![]);
+        assert!(!paid.is_coinbase, "a summary is not a coinbase unless it says so");
+
+        for (summary, expected) in [(&mined, true), (&paid, false)] {
+            let transfer = ValueTransfer::from_summary(
+                summary,
+                ValueTransferKind::Received,
+                0,
+                None,
+                vec![],
+                vec![],
+            );
+            assert_eq!(transfer.is_coinbase, expected);
         }
     }
 

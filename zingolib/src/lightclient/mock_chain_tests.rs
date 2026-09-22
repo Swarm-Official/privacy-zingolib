@@ -459,6 +459,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: recipient_initial_funds,
         fee: Some(10_000),
         zec_price: None,
+        is_coinbase: false,
         pools_sent_from: vec![],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             recipient_initial_funds,
@@ -494,6 +495,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: first_send_to_sapling,
         fee: Some(20_000),
         zec_price: None,
+        is_coinbase: false,
         pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_960_000,
@@ -530,6 +532,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: first_send_to_transparent,
         fee: Some(15_000),
         zec_price: None,
+        is_coinbase: false,
         pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_925_000,
@@ -617,6 +620,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         // fragmented-faucet 20_000.
         fee: Some(10_000),
         zec_price: None,
+        is_coinbase: false,
         pools_sent_from: vec![],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             recipient_second_funding,
@@ -660,6 +664,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: second_send_to_transparent,
         fee: Some(15_000),
         zec_price: None,
+        is_coinbase: false,
         pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             965_000,
@@ -684,6 +689,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: second_send_to_sapling,
         fee: Some(20_000),
         zec_price: None,
+        is_coinbase: false,
         pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             99_885_000,
@@ -727,6 +733,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         value: external_transparent_3,
         fee: Some(15_000),
         zec_price: None,
+        is_coinbase: false,
         pools_sent_from: vec![PoolType::IRONWOOD],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
             930_000,
