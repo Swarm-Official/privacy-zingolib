@@ -158,6 +158,11 @@ pub enum SyncRecoveryObservables {
     /// The error is not recoverable by retrying or switching servers.
     /// User intervention is required (e.g. rescan, fix config).
     Abort,
+    /// The wallet's local sync data is inconsistent (a shard-tree root
+    /// conflict, or a truncation with no checkpoint to roll back to). The fix is
+    /// to clear the local data and re-sync from the server; the wallet keeps its
+    /// keys. Retrying or switching servers cannot help.
+    RebuildRequired,
 }
 
 impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
@@ -183,10 +188,15 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
             | SyncError::BirthdayBelowSapling(..)
-            | SyncError::ShardTreeError(_)
-            | SyncError::TruncationError(..)
             | SyncError::TransparentAddressDerivationError(_)
             | SyncError::WalletError(_) => SyncRecoveryObservables::Abort,
+
+            // The wallet's stored commitment trees disagree with the chain, or a
+            // tree root conflicts with the saved store. Retrying the same server
+            // cannot help; the fix is to clear the local sync data and rescan.
+            SyncError::ShardTreeError(_) | SyncError::TruncationError(..) => {
+                SyncRecoveryObservables::RebuildRequired
+            }
         }
     }
 }
@@ -748,6 +758,23 @@ mod tests {
             fn wallet_error() {
                 let e: TestSyncError = SyncError::WalletError("db locked".to_string());
                 assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
+            }
+        }
+
+        mod rebuild_required {
+            use super::*;
+
+            #[test]
+            fn shard_tree_and_truncation_need_a_local_rebuild() {
+                // TruncationError is constructible without building a live tree;
+                // ShardTreeError is classified in the same arm, so one test covers
+                // the whole "clear and rescan" family.
+                let e: TestSyncError =
+                    SyncError::TruncationError(BlockHeight::from_u32(1246), PoolType::IRONWOOD);
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::RebuildRequired
+                );
             }
         }
     }
