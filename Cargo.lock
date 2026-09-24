@@ -4158,8 +4158,6 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a854b28c07dba372f4410ea8ad62b4bf7d5c2bf8be32fc4b31bc0db6521a975"
 dependencies = [
  "bech32",
  "bs58",
@@ -4361,8 +4359,6 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.10.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "043686451284bcb72e40ffa18e2cdcea3108e8468e3d021062c0b32c4a060c98"
 dependencies = [
  "corez",
  "document-features",

@@ -719,7 +719,9 @@ fn plan_recovery(
         return RecoveryAction::Park;
     }
     match observable {
-        SyncRecoveryObservables::Abort => RecoveryAction::Park,
+        SyncRecoveryObservables::Abort | SyncRecoveryObservables::RebuildRequired => {
+            RecoveryAction::Park
+        }
         SyncRecoveryObservables::MaybeRecoverableServer => RecoveryAction::Relaunch,
         SyncRecoveryObservables::ServerUnavailable if redraw_available => RecoveryAction::Redraw,
         SyncRecoveryObservables::ServerUnavailable => RecoveryAction::Park,

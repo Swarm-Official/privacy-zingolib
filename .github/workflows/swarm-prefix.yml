@@ -1,0 +1,28 @@
+name: SWARM address compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/swarm-prefix-sdk]
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libclang-dev libsqlite3-dev
+      - uses: Swatinem/rust-cache@v2
+      - name: Test SWARM and legacy address compatibility
+        run: cargo test --locked -p zingolib --test swarm_address_prefix
+      - name: Test persisted wallet compatibility
+        run: cargo test --locked -p zingolib --lib
+      - name: Test CLI recovery decisions
+        run: cargo test --locked -p zingo-cli --lib sync_recovery

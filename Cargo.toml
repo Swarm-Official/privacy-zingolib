@@ -149,6 +149,8 @@ rust-embed = "8"
 opt-level = 3
 
 [patch.crates-io]
+zcash_address = { path = "vendor/zcash_address" }
+zcash_protocol = { path = "vendor/zcash_protocol" }
 # Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
 # ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
 # upstream main after PR #5 merged the Ironwood protos; the crate version is still

@@ -32,7 +32,16 @@ impl NetworkSeedVersion {
             PoolType::Transparent,
             PoolType::Shielded(ShieldedPool::Orchard),
         ] {
-            assert_eq!(wallet.get_address(pool), self.example_wallet_address(pool));
+            // Legacy files retain their receivers when the testnet HRP is canonicalized.
+            let actual = wallet
+                .get_address(pool)
+                .parse::<zcash_address::ZcashAddress>()
+                .unwrap();
+            let expected = self
+                .example_wallet_address(pool)
+                .parse::<zcash_address::ZcashAddress>()
+                .unwrap();
+            assert_eq!(actual, expected);
         }
         drop(wallet);
 

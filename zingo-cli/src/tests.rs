@@ -836,11 +836,26 @@ mod sync_recovery {
     }
 
     #[test]
+    fn a_required_rebuild_parks_with_either_redraw_policy() {
+        for redraw_available in [false, true] {
+            assert_eq!(
+                plan_recovery(
+                    SyncRecoveryObservables::RebuildRequired,
+                    SYNC_RECOVERY_ATTEMPT_BUDGET,
+                    redraw_available,
+                ),
+                RecoveryAction::Park
+            );
+        }
+    }
+
+    #[test]
     fn an_exhausted_budget_parks_every_class() {
         for observable in [
             SyncRecoveryObservables::MaybeRecoverableServer,
             SyncRecoveryObservables::ServerUnavailable,
             SyncRecoveryObservables::Abort,
+            SyncRecoveryObservables::RebuildRequired,
         ] {
             assert_eq!(plan_recovery(observable, 0, true), RecoveryAction::Park);
         }
