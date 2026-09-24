@@ -22,7 +22,9 @@ use crate::{
     sync::ScanRange,
     wallet::{
         InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
-        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
+        traits::{
+            SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+        },
     },
 };
 
@@ -70,7 +72,7 @@ pub(super) async fn update_scan_ranges<W>(
     wallet: &mut W,
 ) -> Result<BlockHeight, SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     let sync_state = wallet
         .get_sync_state_mut()
@@ -107,7 +109,12 @@ where
             .get_sync_state_mut()
             .map_err(SyncError::WalletError)?;
         if chain_height_wallet_block.block_hash().0.to_vec() != chain_height_server_block.hash {
-            set_verify_scan_range(sync_state, chain_height, VerifyEnd::VerifyHighest);
+            let verify_range =
+                set_verify_scan_range(sync_state, chain_height, VerifyEnd::VerifyHighest);
+            // A replacement fork can share the verification range's starting seam.
+            // Roll back its old commitments before scanning that range again.
+            let previous_block = 1;
+            super::truncate_wallet_data(wallet, verify_range.block_range().start - previous_block)?;
         }
     }
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
@@ -1161,6 +1168,190 @@ pub(super) fn update_found_note_shard_priority(
 mod tests {
     use super::*;
     use zcash_protocol::local_consensus::LocalNetwork;
+
+    #[tokio::test]
+    async fn same_height_reorg_replaces_old_commitments() {
+        let birthday = BASE_NETWORK.nu6_3.unwrap();
+        verify_same_height_sync(birthday, birthday + VERIFY_BLOCK_RANGE_SIZE, true).await;
+    }
+
+    #[tokio::test]
+    async fn same_height_unchanged_tip_preserves_commitments() {
+        let birthday = BASE_NETWORK.nu6_3.unwrap();
+        verify_same_height_sync(birthday, birthday + VERIFY_BLOCK_RANGE_SIZE, false).await;
+    }
+
+    #[tokio::test]
+    async fn same_height_reorg_replaces_short_history() {
+        let birthday = BASE_NETWORK.nu6_3.unwrap();
+        let short_history = 2;
+        verify_same_height_sync(birthday, birthday + short_history, true).await;
+    }
+
+    #[tokio::test]
+    async fn same_height_reorg_near_genesis() {
+        let birthday = BASE_NETWORK.sapling.unwrap();
+        let short_history = 2;
+        verify_same_height_sync(birthday, birthday + short_history, true).await;
+    }
+
+    async fn verify_same_height_sync(birthday: BlockHeight, tip: BlockHeight, reorg: bool) {
+        use incrementalmerkletree::{Marking, Position, Retention};
+        use orchard::tree::MerkleHashOrchard;
+        use zcash_primitives::block::BlockHash;
+        use zingo_netutils::lightwallet_protocol::CompactBlock;
+
+        use crate::{
+            mocks::MockWalletBuilder,
+            wallet::{ShardTrees, TreeBounds, WalletBlock, traits::SyncShardTrees},
+            witness::build_located_trees,
+        };
+
+        const HASH_BYTES: usize = 32;
+        const EMPTY: u8 = 0;
+        const OLD_HASH: u8 = 1;
+        const NEW_HASH: u8 = 2;
+        const REPLACEMENT: u8 = 42;
+        const NEXT_BLOCK: u32 = 1;
+        let network = LocalNetwork {
+            nu6_3: Some(birthday),
+            ..BASE_NETWORK
+        };
+        let mut shard_trees = ShardTrees::new();
+        let mut blocks = std::collections::BTreeMap::new();
+        let mut leaves = Vec::new();
+        for raw_height in u32::from(birthday)..=u32::from(tip) {
+            let height = BlockHeight::from_u32(raw_height);
+            let mut bytes = [EMPTY; HASH_BYTES];
+            bytes[usize::from(EMPTY)] = raw_height.try_into().unwrap();
+            leaves.push((
+                MerkleHashOrchard::from_bytes(&bytes).unwrap(),
+                Retention::Checkpoint {
+                    id: height,
+                    marking: Marking::None,
+                },
+            ));
+            blocks.insert(
+                height,
+                WalletBlock {
+                    block_height: height,
+                    block_hash: BlockHash([OLD_HASH; HASH_BYTES]),
+                    prev_hash: BlockHash([OLD_HASH; HASH_BYTES]),
+                    time: raw_height,
+                    txids: Vec::new(),
+                    tree_bounds: TreeBounds {
+                        sapling_initial_tree_size: u32::from(EMPTY),
+                        sapling_final_tree_size: u32::from(EMPTY),
+                        orchard_initial_tree_size: u32::from(EMPTY),
+                        orchard_final_tree_size: u32::from(EMPTY),
+                        ironwood_initial_tree_size: height - birthday,
+                        ironwood_final_tree_size: height - birthday + NEXT_BLOCK,
+                    },
+                },
+            );
+        }
+        let batch_size = leaves.len();
+        for tree in build_located_trees(Position::from(u64::from(EMPTY)), leaves, batch_size) {
+            shard_trees
+                .ironwood
+                .insert_tree(tree.subtree, tree.checkpoints)
+                .unwrap();
+        }
+        let mut wallet = MockWalletBuilder::new()
+            .birthday(birthday)
+            .sync_state(SyncState::new_for_test(vec![ScanRange::from_parts(
+                birthday..tip + NEXT_BLOCK,
+                ScanPriority::Scanned,
+            )]))
+            .wallet_blocks(blocks)
+            .shard_trees(shard_trees)
+            .create_mock_wallet();
+        let (requests, mut receiver) = mpsc::unbounded_channel();
+        let server = tokio::spawn(async move {
+            let FetchRequest::CompactBlock(reply, height) = receiver.recv().await.unwrap() else {
+                panic!("expected the chain-tip block request");
+            };
+            assert_eq!(height, tip);
+            reply
+                .send(Ok(CompactBlock {
+                    height: u64::from(u32::from(tip)),
+                    hash: vec![if reorg { NEW_HASH } else { OLD_HASH }; HASH_BYTES],
+                    ..Default::default()
+                }))
+                .unwrap();
+        });
+        update_scan_ranges(&network, requests, tip, tip, &mut wallet)
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        if !reorg {
+            assert_eq!(
+                wallet
+                    .get_wallet_blocks_mut()
+                    .unwrap()
+                    .last_key_value()
+                    .unwrap()
+                    .0,
+                &tip
+            );
+            assert_eq!(
+                wallet.get_sync_state().unwrap().highest_scanned_height(),
+                Some(tip)
+            );
+            assert_eq!(
+                crate::sync::truncate::tree_facts(
+                    &wallet.get_shard_trees_mut().unwrap().ironwood,
+                    tip
+                )
+                .newest_checkpoint,
+                Some(tip),
+            );
+            return;
+        }
+        let verification_start = cmp::max(
+            birthday,
+            BlockHeight::from_u32(
+                (u32::from(tip) + NEXT_BLOCK).saturating_sub(VERIFY_BLOCK_RANGE_SIZE),
+            ),
+        );
+        let retained_height = verification_start - NEXT_BLOCK;
+        let mut bytes = [EMPTY; HASH_BYTES];
+        bytes[usize::from(EMPTY)] = REPLACEMENT;
+        let replacements = build_located_trees(
+            Position::from(u64::from(verification_start - birthday)),
+            vec![(
+                MerkleHashOrchard::from_bytes(&bytes).unwrap(),
+                Retention::Ephemeral,
+            )],
+            usize::try_from(NEXT_BLOCK).unwrap(),
+        );
+        for tree in replacements {
+            wallet
+                .get_shard_trees_mut()
+                .unwrap()
+                .ironwood
+                .insert_tree(tree.subtree, tree.checkpoints)
+                .unwrap();
+        }
+        if retained_height < birthday {
+            assert!(wallet.get_wallet_blocks_mut().unwrap().is_empty());
+        } else {
+            assert_eq!(
+                wallet
+                    .get_wallet_blocks_mut()
+                    .unwrap()
+                    .last_key_value()
+                    .unwrap()
+                    .0,
+                &retained_height
+            );
+        }
+        assert_eq!(
+            wallet.get_sync_state().unwrap().highest_scanned_height(),
+            Some(retained_height)
+        );
+    }
 
     /// A refetched newest subtree root (see
     /// `crate::sync::update_subtree_roots`) rebuilds its shard range via

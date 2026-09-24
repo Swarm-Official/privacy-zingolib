@@ -22,6 +22,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test SWARM and legacy address compatibility
         run: cargo test --locked -p zingolib --test swarm_address_prefix
+      - name: Test sync rollback and recovery
+        run: cargo test --locked -p pepper-sync --lib
       - name: Test persisted wallet compatibility
         run: cargo test --locked -p zingolib --lib
       - name: Test CLI recovery decisions

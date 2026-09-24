@@ -479,18 +479,19 @@ where
     )
     .await?;
 
-    add_initial_frontier(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        &mut *wallet.write().await,
-    )
-    .await?;
-
     let initial_reorg_detection_start_height = state::update_scan_ranges(
         consensus_parameters,
         fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
+        &mut *wallet.write().await,
+    )
+    .await?;
+
+    // A reorg reaching the birthday clears the trees, so restore their frontier afterwards.
+    add_initial_frontier(
+        consensus_parameters,
+        fetch_request_sender.clone(),
         &mut *wallet.write().await,
     )
     .await?;
