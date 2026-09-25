@@ -299,6 +299,7 @@ fn lightd_chain_name(chain: &crate::config::ChainType) -> &'static str {
         crate::config::ChainType::Mainnet => "main",
         crate::config::ChainType::Testnet => "test",
         crate::config::ChainType::CustomTestnet => crate::config::SWARM_TESTNET_NAME,
+        crate::config::ChainType::SwarmMainnet(_) => crate::config::SWARM_MAINNET_NAME,
         crate::config::ChainType::Regtest(_) => "regtest",
     }
 }

@@ -34,3 +34,41 @@ Cargo patches in the top-level workspace select these sources. Downstream
 Cargo workspaces must carry equivalent patches because Cargo ignores a
 dependency's patch table. Coordinated node/server/client and payment acceptance
 gates remain before any released wallet emits the new address spelling.
+
+## SWARM production identity, 2026-09-25
+
+Two more published crates are vendored, for one reason each: both match an enum this
+project has added a variant to, exhaustively, so neither compiles against the vendored
+protocol crate unpatched. Each archive's SHA-256 is the `checksum` this workspace's
+`Cargo.lock` already pinned for the registry copy, verified before extraction.
+
+- zcash_transparent 0.10.0, archive SHA256 547c012778bae17f58007731af074d638aa146ab0ecfc120adebf23d049aff6c
+- zcash_primitives 0.30.0, archive SHA256 34ca4de11896f704ffe6319c2cd7bc8fc6ab31a55cec80d26def15c009d83678
+
+`zcash_protocol` gains `NetworkType::SwarmMain` and its constants module
+`constants/swarm_mainnet.rs`, and `BranchId::SwarmMain`, the SWARM production
+transaction domain `0x53574d31`. `BranchId::for_height` selects that domain for
+`NetworkType::SwarmMain` and for no other network type, so a SWARM transaction cannot
+be signed into an upstream Zcash domain and no upstream network can reach the SWARM
+one. Every rule-selecting method answers for `SwarmMain` what it answers for NU6.3.
+
+`zcash_address` decodes and encodes the SWARM production forms: unified `swm1…`,
+viewing keys `uviewswm…` and `uivkswm…`, transparent `s1…` (0x1C28) and `s3…` (0x1C2D),
+Sapling `zswmsapling…` and TEX `texswm…`. The HRP root is one constant,
+`swarm_mainnet::HRP_ROOT`, confirmed as `swm` by the owner on 2026-09-25. Sprout is
+unsupported and its placeholder prefix deliberately does not decode.
+
+`zcash_transparent`'s `zip48::pub_prefix` returns `Option<Prefix>` and answers `None`
+for `SwarmMain`, so a ZIP 48 key-info expression does not match rather than reusing
+the Zcash `xpub` or `tpub` prefix. `zcash_primitives` takes the NU6.3 answer for the
+SWARM domain in `TxVersion::suggested_for_branch`, `TxVersion::valid_in_branch` and
+the builder's Ironwood gate, and the domain reaches the ZIP 244 digests through
+`u32::from(branch)` with no match to change.
+
+Each vendored crate carries an empty `[workspace]` table and its own
+`[patch.crates-io]`, or a `.cargo/config.toml` holding the same patch, so that running
+its suite on its own resolves the same sibling vendored crates the workspace resolves.
+The outer workspace ignores those sections and selects the identical paths.
+
+Ported from the node worktrees `codex/mainnet-identity-encodings-20260925` (P1d,
+5a5d5b391) and `codex/mainnet-production-domain-20260925` (P1c, 6cbde4d7b).

@@ -34,7 +34,7 @@ pub fn zfz_unified_address() -> zcash_client_backend::address::UnifiedAddress {
     let zcash_client_backend::address::Address::Unified(address) =
         zcash_client_backend::address::Address::decode(
             &network,
-            zingolib::get_zennies_for_zingo_address(network),
+            zingolib::get_zennies_for_zingo_address(network).expect("regtest offers the donation"),
         )
         .unwrap()
     else {

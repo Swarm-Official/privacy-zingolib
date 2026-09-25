@@ -147,8 +147,9 @@ impl LightWallet {
             ));
         };
 
-        let zenny_address = address_from_str(get_zennies_for_zingo_address(self.chain_type))
-            .expect("hard-coded address");
+        let zenny_address = get_zennies_for_zingo_address(self.chain_type)
+            .ok_or(ProposeSendError::NoZenniesForZingoAddress(self.chain_type))
+            .map(|address| address_from_str(address).expect("hard-coded address"))?;
         let request = |amount: Zatoshis| {
             transaction_request_from_receivers(vec![
                 Receiver::new(address.clone(), amount, memo.clone()),

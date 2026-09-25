@@ -537,7 +537,8 @@ mod send_all {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(initial_funds)
             .build();
-        let zfz_address = crate::get_zennies_for_zingo_address(wallet.chain_type());
+        let zfz_address = crate::get_zennies_for_zingo_address(wallet.chain_type())
+            .expect("the test chain offers the donation");
         let mut client = LightClient::new_for_test(wallet).await;
 
         let proposal = client

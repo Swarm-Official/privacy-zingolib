@@ -192,7 +192,8 @@ async fn max_send_value_to_tex_with_zennies_empties_the_wallet() {
         "a wallet funded past the zenny can send to a TEX address"
     );
 
-    let zenny_address = crate::get_zennies_for_zingo_address(sender.chain_type());
+    let zenny_address = crate::get_zennies_for_zingo_address(sender.chain_type())
+        .expect("the test chain offers the donation");
     from_inputs::quick_send(
         &mut sender,
         vec![

@@ -1003,6 +1003,9 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
                 zingolib::config::ChainType::CustomTestnet => zingolib::config::SWARM_TESTNET_NAME,
+                zingolib::config::ChainType::SwarmMainnet(_) => {
+                    zingolib::config::SWARM_MAINNET_NAME
+                }
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };
@@ -1090,6 +1093,7 @@ fn parse_viewkey(viewkey: &str) -> Result<String, CommandError> {
                     "chain_name" => match network {
                         NetworkType::Main => "main",
                         NetworkType::Test => "test",
+                        NetworkType::SwarmMain => zingolib::config::SWARM_MAINNET_NAME,
                         NetworkType::Regtest => "regtest",
                     },
                     "address_kind" => "ufvk",

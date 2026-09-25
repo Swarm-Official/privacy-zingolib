@@ -34,7 +34,9 @@ impl Trust {
     /// The trust `chain` gives an unclassified remote indexer.
     pub fn remote_default(chain: &ChainType) -> Self {
         match chain {
-            ChainType::Mainnet => Trust::Untrusted,
+            // A production chain carries real value, so an unclassified remote
+            // indexer starts untrusted on both of them.
+            ChainType::Mainnet | ChainType::SwarmMainnet(_) => Trust::Untrusted,
             ChainType::Testnet | ChainType::CustomTestnet | ChainType::Regtest(_) => Trust::Trusted,
         }
     }
@@ -184,7 +186,8 @@ fn registry_chain(chain: &ChainType) -> Option<IndexerChain> {
     match chain {
         ChainType::Mainnet => Some(IndexerChain::Main),
         ChainType::Testnet => Some(IndexerChain::Test),
-        ChainType::CustomTestnet | ChainType::Regtest(_) => None,
+        // The census lists Zcash indexers. Neither SWARM chain is in it.
+        ChainType::CustomTestnet | ChainType::SwarmMainnet(_) | ChainType::Regtest(_) => None,
     }
 }
 

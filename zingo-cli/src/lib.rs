@@ -568,6 +568,7 @@ fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) -> Exit
         ChainType::Mainnet => "main",
         ChainType::Testnet => "test",
         ChainType::CustomTestnet => zingolib::config::SWARM_TESTNET_NAME,
+        ChainType::SwarmMainnet(_) => zingolib::config::SWARM_MAINNET_NAME,
         ChainType::Regtest(_) => "regtest",
     };
 
@@ -1526,6 +1527,7 @@ fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
         ChainType::Mainnet => Some(zingolib::indexers::IndexerChain::Main),
         ChainType::Testnet => Some(zingolib::indexers::IndexerChain::Test),
         ChainType::CustomTestnet => None,
+        ChainType::SwarmMainnet(_) => None,
         ChainType::Regtest(_) => None,
     }
 }

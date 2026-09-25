@@ -17,7 +17,13 @@ members = [
 # 0.30, which pins the same release candidate 0.29 did). Members still consume
 # netutils through the `zingo-netutils` path dependency below, resolved in
 # THIS lockfile with `nym` off. See docs/adr/0011-nym-mixnet-transmission.md.
-exclude = ["zingo-netutils"]
+exclude = [
+    "zingo-netutils",
+    "vendor/zcash_address",
+    "vendor/zcash_primitives",
+    "vendor/zcash_protocol",
+    "vendor/zcash_transparent",
+]
 resolver = "2"
 
 [workspace.dependencies]
@@ -151,6 +157,12 @@ opt-level = 3
 [patch.crates-io]
 zcash_address = { path = "vendor/zcash_address" }
 zcash_protocol = { path = "vendor/zcash_protocol" }
+# Vendored so the exhaustive `BranchId` matches in this crate answer for the SWARM
+# production domain; see vendor/README.md.
+zcash_primitives = { path = "vendor/zcash_primitives" }
+# Vendored so the exhaustive `NetworkType` match in its `zip48` module handles
+# `NetworkType::SwarmMain` explicitly; see vendor/README.md.
+zcash_transparent = { path = "vendor/zcash_transparent" }
 # Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
 # ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
 # upstream main after PR #5 merged the Ironwood protos; the crate version is still

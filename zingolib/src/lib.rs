@@ -52,13 +52,19 @@ pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d
 /// Zennies for zingo donation amount
 pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 
-/// Gets the appropriate zennies for zingo donation address for the given chain type.
+/// The Zennies for Zingo donation address for `chain_type`, where the campaign
+/// has one.
+///
+/// [`ChainType::SwarmMainnet`] answers `None`. The four addresses above are
+/// Zcash addresses, and the SWARM production network decodes none of them, so
+/// there is nothing here to pay on it.
 #[must_use]
-pub fn get_zennies_for_zingo_address(chain_type: ChainType) -> &'static str {
+pub fn get_zennies_for_zingo_address(chain_type: ChainType) -> Option<&'static str> {
     match chain_type {
-        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
-        ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-        ChainType::CustomTestnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-        ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        ChainType::Mainnet => Some(ZENNIES_FOR_ZINGO_DONATION_ADDRESS),
+        ChainType::Testnet => Some(ZENNIES_FOR_ZINGO_TESTNET_ADDRESS),
+        ChainType::CustomTestnet => Some(ZENNIES_FOR_ZINGO_TESTNET_ADDRESS),
+        ChainType::SwarmMainnet(_) => None,
+        ChainType::Regtest(_) => Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS),
     }
 }

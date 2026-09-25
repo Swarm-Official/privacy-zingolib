@@ -103,6 +103,79 @@ pub const fn swarm_testnet_genesis_is_placeholder() -> bool {
     true
 }
 
+/// The light-wallet chain label the SWARM production indexer reports, which is
+/// also this profile's wallet identity and data-directory name.
+///
+/// It is not the string `mainnet`. `mainnet` means upstream Zcash Mainnet in
+/// this SDK and keeps meaning it: [`ChainType::try_from`] maps that name to
+/// [`ChainType::Mainnet`] and to nothing else.
+pub const SWARM_MAINNET_NAME: &str = "swarm-mainnet";
+
+/// The SWARM production network's first block above genesis, where every
+/// network upgrade activates.
+///
+/// Read from the vendored protocol constants, which is also where
+/// [`zcash_protocol::consensus::BranchId::for_height`] reads the height at
+/// which the SWARM replay domain takes effect, so the wallet's schedule and the
+/// consensus domain cannot drift apart.
+pub const SWARM_MAINNET_BIRTHDAY: u32 = zcash_protocol::constants::swarm_mainnet::ACTIVATION_HEIGHT;
+
+/// The number of bytes in a block hash.
+const BLOCK_HASH_BYTES: usize = 32;
+
+/// The SWARM production network's genesis block hash.
+///
+/// SwarmTestnet's genesis is a constant in this module because that chain is
+/// running and its hash is published. SWARM production has no genesis yet: it
+/// is generated at the launch ceremony. So there is deliberately no constant,
+/// no [`Default`] and no placeholder here. Every [`ChainType::SwarmMainnet`]
+/// carries the hash its caller supplied, which is the hash the wallet holds
+/// its indexer to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SwarmMainnetGenesis([u8; BLOCK_HASH_BYTES]);
+
+impl SwarmMainnetGenesis {
+    /// Reads the display-order hexadecimal hash a node, an indexer or a network
+    /// manifest prints.
+    pub fn from_display_hex(hash: &str) -> Result<Self, InvalidSwarmMainnetGenesis> {
+        let invalid = || InvalidSwarmMainnetGenesis(hash.to_string());
+        if hash.chars().any(|c| c.is_ascii_uppercase()) {
+            return Err(invalid());
+        }
+        let bytes: [u8; BLOCK_HASH_BYTES] = hex::decode(hash)
+            .map_err(|_| invalid())?
+            .try_into()
+            .map_err(|_| invalid())?;
+        Ok(Self(bytes))
+    }
+
+    /// The display-order hexadecimal hash, spelled as a node prints it.
+    #[must_use]
+    pub fn to_display_hex(&self) -> String {
+        hex::encode(self.0)
+    }
+
+    /// The hash bytes, in display order.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; BLOCK_HASH_BYTES] {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SwarmMainnetGenesis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_display_hex())
+    }
+}
+
+/// A string that is not a SWARM production genesis block hash.
+#[derive(thiserror::Error, Debug)]
+#[error(
+    "'{0}' is not a block hash: a SWARM production genesis is 64 lowercase hexadecimal \
+     characters in display order."
+)]
+pub struct InvalidSwarmMainnetGenesis(String);
+
 /// The upgrade schedule bound to [`SWARM_TESTNET_GENESIS`].
 pub fn swarm_testnet_activation_heights() -> ActivationHeights {
     let height = Some(SWARM_TESTNET_BIRTHDAY);
@@ -133,6 +206,7 @@ pub fn lib_birthday(chain: ChainType) -> u32 {
         ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
         ChainType::Testnet => LIB_BIRTHDAY_TESTNET,
         ChainType::CustomTestnet => SWARM_TESTNET_BIRTHDAY,
+        ChainType::SwarmMainnet(_) => SWARM_MAINNET_BIRTHDAY,
         // A regtest chain is born alongside its wallets; scanning from
         // genesis is both correct and cheap.
         ChainType::Regtest(_) => 1,
@@ -151,6 +225,19 @@ pub enum ChainType {
     /// The variant name is deliberately generic — there is one custom-testnet
     /// slot in this SDK and SwarmTestnet is what currently occupies it.
     CustomTestnet,
+    /// The SWARM production network, labelled [`SWARM_MAINNET_NAME`] and
+    /// identified by the genesis hash it carries.
+    ///
+    /// A separate chain from Zcash Mainnet, with its own network type
+    /// ([`zcash_protocol::consensus::NetworkType::SwarmMain`]), its own address
+    /// encodings and its own consensus branch domain. [`ChainType::Mainnet`]
+    /// remains upstream Zcash, so the string `mainnet` never reaches here.
+    ///
+    /// The genesis hash is a field rather than a module constant because SWARM
+    /// production has none yet, and a wallet that scanned the wrong chain would
+    /// write its state back over the right one. A caller that cannot name the
+    /// genesis cannot build this variant.
+    SwarmMainnet(SwarmMainnetGenesis),
     /// Regtest
     Regtest(ActivationHeights),
 }
@@ -161,6 +248,7 @@ impl std::fmt::Display for ChainType {
             ChainType::Mainnet => "mainnet",
             ChainType::Testnet => "testnet",
             ChainType::CustomTestnet => SWARM_TESTNET_NAME,
+            ChainType::SwarmMainnet(_) => SWARM_MAINNET_NAME,
             ChainType::Regtest(_) => "regtest",
         };
         write!(f, "{chain}")
@@ -176,7 +264,8 @@ impl TryFrom<&str> for ChainType {
             "testnet" => Ok(ChainType::Testnet),
             SWARM_TESTNET_NAME => Ok(ChainType::CustomTestnet),
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
-            _ => Err(InvalidChainType(value.to_string())),
+            SWARM_MAINNET_NAME => Err(InvalidChainType::SwarmMainnetNeedsGenesis),
+            _ => Err(InvalidChainType::Unknown(value.to_string())),
         }
     }
 }
@@ -194,6 +283,7 @@ pub(crate) mod consealed {
                 ChainType::Mainnet => NetworkType::Main,
                 ChainType::Testnet => NetworkType::Test,
                 ChainType::CustomTestnet => NetworkType::Test,
+                ChainType::SwarmMainnet(_) => NetworkType::SwarmMain,
                 ChainType::Regtest(_) => NetworkType::Regtest,
             }
         }
@@ -205,6 +295,12 @@ pub(crate) mod consealed {
                 ChainType::CustomTestnet => {
                     ChainType::Regtest(super::swarm_testnet_activation_heights())
                         .activation_height(nu)
+                }
+                // SWARM production runs the NU6.3 rules from its first block, so
+                // every upgrade activates there and no schedule table can fall
+                // out of step with the branch domain.
+                ChainType::SwarmMainnet(_) => {
+                    Some(BlockHeight::from_u32(super::SWARM_MAINNET_BIRTHDAY))
                 }
                 ChainType::Regtest(activation_heights) => match nu {
                     NetworkUpgrade::Overwinter => {
@@ -233,10 +329,23 @@ pub(crate) mod consealed {
     }
 }
 
-/// Invalid chain type.
+/// A chain name that does not name a chain this SDK can build from the name.
 #[derive(thiserror::Error, Debug)]
-#[error("Invalid chain type '{0}'. Expected 'mainnet', 'testnet', 'swarm-testnet' or 'regtest'.")]
-pub struct InvalidChainType(String);
+pub enum InvalidChainType {
+    /// The name matches no chain.
+    #[error(
+        "Invalid chain type '{0}'. Expected 'mainnet', 'testnet', 'swarm-testnet' or 'regtest'."
+    )]
+    Unknown(String),
+    /// The name matches the SWARM production network, which carries a genesis
+    /// hash that a name cannot supply.
+    #[error(
+        "'swarm-mainnet' cannot be built from its name: the SWARM production profile carries \
+         the genesis block hash the network launched from. Construct \
+         `ChainType::SwarmMainnet` with that hash."
+    )]
+    SwarmMainnetNeedsGenesis,
+}
 
 /// Configuration data for the construction of a [`crate::wallet::LightWallet`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -289,6 +398,8 @@ impl WalletConfig {
                     .expect("should have some sapling activation height");
                 let birthday = if chain_type == ChainType::CustomTestnet {
                     BlockHeight::from_u32(SWARM_TESTNET_BIRTHDAY)
+                } else if matches!(chain_type, ChainType::SwarmMainnet(_)) {
+                    BlockHeight::from_u32(SWARM_MAINNET_BIRTHDAY)
                 } else {
                     sapling_activation_height.max(BlockHeight::from_u32(chain_height) - 100)
                 };
@@ -641,6 +752,7 @@ fn wallet_dir_or_default(
                     ChainType::Mainnet => {}
                     ChainType::Testnet => dir.push("testnet3"),
                     ChainType::CustomTestnet => dir.push(SWARM_TESTNET_NAME),
+                    ChainType::SwarmMainnet(_) => dir.push(SWARM_MAINNET_NAME),
                     ChainType::Regtest(_) => dir.push("regtest"),
                 }
 
@@ -671,6 +783,222 @@ pub enum ClientConfigError {
 #[cfg(test)]
 mod tests {
     use crate::config::{ChainType, ClientConfig};
+
+    /// A genesis hash nobody has yet, standing in for the one the launch
+    /// ceremony will produce. Written out rather than derived so a reader can
+    /// see that this profile is built from a value, not from a constant.
+    const CEREMONY_GENESIS: &str =
+        "00d4b1cb01d6bd2d1a3a4a49bba6fd0a4c2e2f7c0d6e5b4a39281706f5e4d3c2";
+
+    fn swarm_mainnet() -> ChainType {
+        ChainType::SwarmMainnet(
+            super::SwarmMainnetGenesis::from_display_hex(CEREMONY_GENESIS).unwrap(),
+        )
+    }
+
+    /// The SWARM production profile answers its own network type and its own
+    /// consensus branch domain, at every height it can reach. This is the
+    /// assertion that stands between a SWARM payment and a Zcash signature.
+    #[test]
+    fn swarm_mainnet_is_its_own_network_and_branch_domain() {
+        use super::{SWARM_MAINNET_BIRTHDAY, SWARM_MAINNET_NAME};
+        use zcash_protocol::consensus::{
+            BlockHeight, BranchId, NetworkType, NetworkUpgrade, Parameters,
+        };
+
+        let chain = swarm_mainnet();
+        let activation = BlockHeight::from_u32(SWARM_MAINNET_BIRTHDAY);
+        assert_eq!(chain.to_string(), SWARM_MAINNET_NAME);
+        assert_eq!(chain.network_type(), NetworkType::SwarmMain);
+        assert_eq!(super::lib_birthday(chain), SWARM_MAINNET_BIRTHDAY);
+        for upgrade in [
+            NetworkUpgrade::Overwinter,
+            NetworkUpgrade::Sapling,
+            NetworkUpgrade::Blossom,
+            NetworkUpgrade::Heartwood,
+            NetworkUpgrade::Canopy,
+            NetworkUpgrade::Nu5,
+            NetworkUpgrade::Nu6,
+            NetworkUpgrade::Nu6_1,
+            NetworkUpgrade::Nu6_2,
+            NetworkUpgrade::Nu6_3,
+        ] {
+            assert_eq!(chain.activation_height(upgrade), Some(activation));
+        }
+        for height in [activation, activation + 1, BlockHeight::from_u32(u32::MAX)] {
+            assert_eq!(BranchId::for_height(&chain, height), BranchId::SwarmMain);
+        }
+        assert_eq!(u32::from(BranchId::SwarmMain), 0x5357_4d31);
+    }
+
+    /// No height on the SWARM production profile signs into an upstream domain,
+    /// and no height on an upstream profile signs into SWARM's.
+    #[test]
+    fn swarm_mainnet_and_upstream_branch_domains_stay_apart() {
+        use zcash_protocol::consensus::{BlockHeight, BranchId};
+
+        let upstream_domains = [
+            BranchId::Sprout,
+            BranchId::Overwinter,
+            BranchId::Sapling,
+            BranchId::Blossom,
+            BranchId::Heartwood,
+            BranchId::Canopy,
+            BranchId::Nu5,
+            BranchId::Nu6,
+            BranchId::Nu6_1,
+            BranchId::Nu6_2,
+            BranchId::Nu6_3,
+        ];
+        let swarm = swarm_mainnet();
+        for height in [1, 2, 1_000_000, u32::MAX].map(BlockHeight::from_u32) {
+            let ours = BranchId::for_height(&swarm, height);
+            assert!(!upstream_domains.contains(&ours), "{ours:?} at {height:?}");
+            for upstream in [
+                ChainType::Mainnet,
+                ChainType::Testnet,
+                ChainType::CustomTestnet,
+                ChainType::Regtest(crate::ActivationHeights::default()),
+            ] {
+                assert_ne!(
+                    BranchId::for_height(&upstream, height),
+                    BranchId::SwarmMain,
+                    "{upstream} at {height:?}",
+                );
+            }
+        }
+    }
+
+    /// The generic chain names keep their meanings. `mainnet` is upstream Zcash
+    /// Mainnet and reaches no SWARM profile, and `swarm-mainnet` names a chain
+    /// the SDK refuses to build without its genesis.
+    #[test]
+    fn the_mainnet_string_never_reaches_the_swarm_production_profile() {
+        use super::{InvalidChainType, SWARM_MAINNET_NAME, SWARM_TESTNET_NAME};
+        use zcash_protocol::consensus::{NetworkType, Parameters};
+
+        let upstream = ChainType::try_from("mainnet").unwrap();
+        assert_eq!(upstream, ChainType::Mainnet);
+        assert_eq!(upstream.network_type(), NetworkType::Main);
+        assert_eq!(
+            ChainType::try_from(SWARM_TESTNET_NAME).unwrap(),
+            ChainType::CustomTestnet,
+        );
+        assert!(matches!(
+            ChainType::try_from(SWARM_MAINNET_NAME),
+            Err(InvalidChainType::SwarmMainnetNeedsGenesis),
+        ));
+        for name in [
+            "swarm",
+            "swarmmainnet",
+            "swarm_mainnet",
+            "SWARM-MAINNET",
+            "",
+        ] {
+            assert!(matches!(
+                ChainType::try_from(name),
+                Err(InvalidChainType::Unknown(_)),
+            ));
+        }
+    }
+
+    /// The genesis hash has to be named, and named correctly.
+    #[test]
+    fn a_swarm_production_profile_carries_the_genesis_it_was_given() {
+        use super::SwarmMainnetGenesis;
+
+        let genesis = SwarmMainnetGenesis::from_display_hex(CEREMONY_GENESIS).unwrap();
+        assert_eq!(genesis.to_display_hex(), CEREMONY_GENESIS);
+        assert_eq!(genesis.to_string(), CEREMONY_GENESIS);
+        assert_eq!(genesis.as_bytes().len(), 32);
+
+        for refused in [
+            "",
+            "00",
+            &CEREMONY_GENESIS[..62],
+            &format!("{CEREMONY_GENESIS}00"),
+            &CEREMONY_GENESIS.to_uppercase(),
+            &"z".repeat(64),
+        ] {
+            assert!(
+                SwarmMainnetGenesis::from_display_hex(refused).is_err(),
+                "{refused} is not a genesis hash",
+            );
+        }
+
+        // Two ceremonies, two chains. Nothing folds them together.
+        let other = SwarmMainnetGenesis::from_display_hex(&"ab".repeat(32)).unwrap();
+        assert_ne!(genesis, other);
+        assert_ne!(
+            ChainType::SwarmMainnet(genesis),
+            ChainType::SwarmMainnet(other),
+        );
+    }
+
+    /// A SWARM production wallet file belongs to the SWARM production chain and
+    /// opens against nothing else.
+    #[test]
+    fn swarm_mainnet_wallet_disk_identity() {
+        use super::{SWARM_MAINNET_BIRTHDAY, WalletConfig};
+        use crate::wallet::{LightWallet, WalletSettings};
+
+        let chain = swarm_mainnet();
+        let mut wallet = LightWallet::new(
+            chain,
+            WalletConfig::NewSeed {
+                no_of_accounts: std::num::NonZeroU32::MIN,
+                chain_height: SWARM_MAINNET_BIRTHDAY,
+                wallet_settings: WalletSettings::default(),
+            },
+        )
+        .unwrap();
+        assert_eq!(u32::from(wallet.birthday()), SWARM_MAINNET_BIRTHDAY);
+
+        let mut bytes = Vec::new();
+        wallet.write(&mut bytes, &chain).unwrap();
+        let restored = LightWallet::read(bytes.as_slice(), chain).unwrap();
+        assert_eq!(restored.chain_type(), chain);
+        for other in [
+            ChainType::Mainnet,
+            ChainType::Testnet,
+            ChainType::CustomTestnet,
+            ChainType::Regtest(crate::ActivationHeights::default()),
+        ] {
+            assert!(
+                LightWallet::read(bytes.as_slice(), other).is_err(),
+                "a swarm-mainnet wallet file must not open as {other}",
+            );
+        }
+        // A SwarmTestnet file must not open as SWARM production either.
+        let mut testnet = Vec::new();
+        LightWallet::new(
+            ChainType::CustomTestnet,
+            WalletConfig::NewSeed {
+                no_of_accounts: std::num::NonZeroU32::MIN,
+                chain_height: super::SWARM_TESTNET_BIRTHDAY,
+                wallet_settings: WalletSettings::default(),
+            },
+        )
+        .unwrap()
+        .write(&mut testnet, &ChainType::CustomTestnet)
+        .unwrap();
+        assert!(LightWallet::read(testnet.as_slice(), chain).is_err());
+    }
+
+    /// The Zennies for Zingo campaign pays Zcash addresses, so it has nothing
+    /// to pay on the SWARM production network.
+    #[test]
+    fn the_zingo_donation_is_not_offered_on_swarm_mainnet() {
+        assert_eq!(crate::get_zennies_for_zingo_address(swarm_mainnet()), None);
+        for chain in [
+            ChainType::Mainnet,
+            ChainType::Testnet,
+            ChainType::CustomTestnet,
+            ChainType::Regtest(crate::ActivationHeights::default()),
+        ] {
+            assert!(crate::get_zennies_for_zingo_address(chain).is_some());
+        }
+    }
 
     #[test]
     fn swarm_profile_keeps_test_encoding_and_early_upgrades() {

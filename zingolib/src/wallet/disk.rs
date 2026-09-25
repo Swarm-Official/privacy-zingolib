@@ -18,7 +18,6 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
-use zingo_common_components::protocol::ActivationHeights;
 use zingo_netutils::lightwallet_protocol::TreeState;
 use zingo_price::PriceList;
 
@@ -57,6 +56,11 @@ type WalletTail = (PriceList, Option<crate::wallet::migration::MigrationState>);
 // chain-name string on that same byte, where 4 and 7 are string lengths.
 const SWARM_TESTNET_TAG: u8 = 5;
 
+// The SWARM production network. Its own tag for the same reason SwarmTestnet has
+// one: a wallet file belongs to exactly one chain, and opening it against
+// another would scan it against the wrong chain and save that state back.
+const SWARM_MAINNET_TAG: u8 = 6;
+
 // Retired: the Privacy Testnet profile this one replaces.
 const PRIVACY_TESTNET_TAG: u8 = 3;
 
@@ -80,12 +84,19 @@ fn read_v40_chain_field<R: Read>(reader: &mut R) -> io::Result<V40ChainField> {
     }
 }
 
-fn chain_type_from_tag(tag: u8) -> io::Result<ChainType> {
+/// The chain a stored tag names.
+///
+/// A name rather than a [`ChainType`]: the caller already holds the chain it
+/// means to open the file against, and every caller compares names. A
+/// `ChainType::SwarmMainnet` cannot be rebuilt from a tag anyway, since it
+/// carries a genesis hash the file does not store.
+fn chain_name_from_tag(tag: u8) -> io::Result<&'static str> {
     match tag {
-        0 => Ok(ChainType::Mainnet),
-        1 => Ok(ChainType::Testnet),
-        2 => Ok(ChainType::Regtest(ActivationHeights::default())),
-        SWARM_TESTNET_TAG => Ok(ChainType::CustomTestnet),
+        0 => Ok("mainnet"),
+        1 => Ok("testnet"),
+        2 => Ok("regtest"),
+        SWARM_TESTNET_TAG => Ok(crate::config::SWARM_TESTNET_NAME),
+        SWARM_MAINNET_TAG => Ok(crate::config::SWARM_MAINNET_NAME),
         PRIVACY_TESTNET_TAG => Err(Error::new(
             ErrorKind::InvalidData,
             "this wallet file belongs to the retired Privacy Testnet, not to SwarmTestnet; \
@@ -105,6 +116,7 @@ fn chain_name_from_stored(stored: &str) -> io::Result<&'static str> {
         "test" => Ok("testnet"),
         "regtest" => Ok("regtest"),
         crate::config::SWARM_TESTNET_NAME => Ok(crate::config::SWARM_TESTNET_NAME),
+        crate::config::SWARM_MAINNET_NAME => Ok(crate::config::SWARM_MAINNET_NAME),
         other => Err(Error::new(
             ErrorKind::InvalidData,
             format!("invalid chain type stored in wallet file: {}", other,),
@@ -203,6 +215,7 @@ impl LightWallet {
             ChainType::Testnet => 1,
             ChainType::Regtest(_) => 2,
             ChainType::CustomTestnet => SWARM_TESTNET_TAG,
+            ChainType::SwarmMainnet(_) => SWARM_MAINNET_TAG,
         })?;
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.clone().into_entropy(),
@@ -532,13 +545,12 @@ impl LightWallet {
 
     fn read_v32<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
         let dev_v40_grammar = if version >= 41 {
-            let saved_network = chain_type_from_tag(reader.read_u8()?)?;
-            check_saved_chain(&saved_network.to_string(), &chain_type)?;
+            check_saved_chain(chain_name_from_tag(reader.read_u8()?)?, &chain_type)?;
             false
         } else if version == 40 {
             match read_v40_chain_field(&mut reader)? {
                 V40ChainField::Tag(tag) => {
-                    check_saved_chain(&chain_type_from_tag(tag)?.to_string(), &chain_type)?;
+                    check_saved_chain(chain_name_from_tag(tag)?, &chain_type)?;
                     true
                 }
                 V40ChainField::Name(stored) => {

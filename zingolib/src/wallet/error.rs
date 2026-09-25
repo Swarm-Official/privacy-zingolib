@@ -346,6 +346,9 @@ pub enum ProposeSendError {
     /// failed to construct a transaction request
     #[error("{0}")]
     TransactionRequestFailed(#[from] zcash_client_backend::zip321::Zip321Error),
+    /// the chain has no Zennies for Zingo donation address
+    #[error("the Zennies for Zingo donation is not offered on {0}")]
+    NoZenniesForZingoAddress(crate::config::ChainType),
 }
 
 /// Errors that can result from constructing shield proposals.

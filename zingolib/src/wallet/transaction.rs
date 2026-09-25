@@ -171,6 +171,8 @@ impl LightWallet {
         transaction: &WalletTransaction,
         spends: &SpendsByPool<'_>,
     ) -> TransactionKind {
+        // `None` on a chain the campaign does not cover, where no output can be
+        // a Zennies payment.
         let zfz_address = get_zennies_for_zingo_address(self.chain_type);
 
         let sends_no_notes = transaction.outgoing_sapling_notes().is_empty()
@@ -200,7 +202,9 @@ impl LightWallet {
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
                             .encoded_recipient_full_unified_address(&self.chain_type)
-                            .is_some_and(|unified_address| unified_address == *zfz_address)
+                            .is_some_and(|unified_address| {
+                                zfz_address == Some(unified_address.as_str())
+                            })
                 })
             && transaction
                 .outgoing_orchard_notes()
@@ -211,7 +215,9 @@ impl LightWallet {
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
                             .encoded_recipient_full_unified_address(&self.chain_type)
-                            .is_some_and(|unified_address| unified_address == *zfz_address)
+                            .is_some_and(|unified_address| {
+                                zfz_address == Some(unified_address.as_str())
+                            })
                 })
             && transaction
                 .outgoing_ironwood_notes()
@@ -222,7 +228,9 @@ impl LightWallet {
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
                             .encoded_recipient_full_unified_address(&self.chain_type)
-                            .is_some_and(|unified_address| unified_address == *zfz_address)
+                            .is_some_and(|unified_address| {
+                                zfz_address == Some(unified_address.as_str())
+                            })
                 })
         {
             TransactionKind::Sent(SendType::SendToSelf)

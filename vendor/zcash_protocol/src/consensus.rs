@@ -9,7 +9,7 @@ use core::ops::{Add, Bound, RangeBounds, Sub};
 #[cfg(feature = "std")]
 use memuse::DynamicUsage;
 
-use crate::constants::{mainnet, regtest, testnet};
+use crate::constants::{mainnet, regtest, swarm_mainnet, testnet};
 
 /// A wrapper type representing blockchain heights.
 ///
@@ -203,6 +203,32 @@ pub enum NetworkType {
     /// For some address types there is no distinction between test and regtest encodings;
     /// those will always be parsed as `Network::Test`.
     Regtest,
+    /// The SWARM production network (SwarmMainnet).
+    ///
+    /// This is a SWARM-owned network identity, **not** Zcash Mainnet and **not** an alias
+    /// of any test network. Its encoding constants live in
+    /// [`crate::constants::swarm_mainnet`] and are disjoint from every other variant here,
+    /// so no string encoded for `SwarmMain` can be decoded as `Main`, `Test` or `Regtest`,
+    /// and no historical SWARM testnet string (`swarm1…`, `utest1…`, `uviewswarm…`,
+    /// `tm…`, `t2…`) can be decoded as `SwarmMain`.
+    ///
+    /// This crate deliberately defines **no** activation heights and **no** consensus
+    /// branch ID for `SwarmMain`: the production schedule is admitted by P1c.
+    SwarmMain,
+}
+
+impl NetworkType {
+    /// Returns `true` if this crate defines a consensus activation schedule and branch-ID
+    /// domain for this network type.
+    ///
+    /// [`NetworkType::SwarmMain`] returns `false`: the SWARM production schedule is
+    /// admitted by P1c, and must never fall back to upstream Zcash values.
+    pub const fn has_upstream_consensus_schedule(&self) -> bool {
+        match self {
+            NetworkType::Main | NetworkType::Test | NetworkType::Regtest => true,
+            NetworkType::SwarmMain => false,
+        }
+    }
 }
 
 #[cfg(feature = "std")]
@@ -303,6 +329,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::COIN_TYPE,
             NetworkType::Test => testnet::COIN_TYPE,
             NetworkType::Regtest => regtest::COIN_TYPE,
+            NetworkType::SwarmMain => swarm_mainnet::COIN_TYPE,
         }
     }
 
@@ -311,6 +338,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
             NetworkType::Test => testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
             NetworkType::Regtest => regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            NetworkType::SwarmMain => swarm_mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
         }
     }
 
@@ -319,6 +347,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
             NetworkType::Test => testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
             NetworkType::Regtest => regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            NetworkType::SwarmMain => swarm_mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
         }
     }
 
@@ -327,6 +356,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
             NetworkType::Test => testnet::HRP_SAPLING_PAYMENT_ADDRESS,
             NetworkType::Regtest => regtest::HRP_SAPLING_PAYMENT_ADDRESS,
+            NetworkType::SwarmMain => swarm_mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
         }
     }
 
@@ -335,6 +365,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::B58_SPROUT_ADDRESS_PREFIX,
             NetworkType::Test => testnet::B58_SPROUT_ADDRESS_PREFIX,
             NetworkType::Regtest => regtest::B58_SPROUT_ADDRESS_PREFIX,
+            NetworkType::SwarmMain => swarm_mainnet::B58_SPROUT_ADDRESS_PREFIX,
         }
     }
 
@@ -343,6 +374,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::B58_PUBKEY_ADDRESS_PREFIX,
             NetworkType::Test => testnet::B58_PUBKEY_ADDRESS_PREFIX,
             NetworkType::Regtest => regtest::B58_PUBKEY_ADDRESS_PREFIX,
+            NetworkType::SwarmMain => swarm_mainnet::B58_PUBKEY_ADDRESS_PREFIX,
         }
     }
 
@@ -351,6 +383,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::B58_SECRET_KEY_PREFIX,
             NetworkType::Test => testnet::B58_SECRET_KEY_PREFIX,
             NetworkType::Regtest => regtest::B58_SECRET_KEY_PREFIX,
+            NetworkType::SwarmMain => swarm_mainnet::B58_SECRET_KEY_PREFIX,
         }
     }
 
@@ -359,6 +392,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::B58_SCRIPT_ADDRESS_PREFIX,
             NetworkType::Test => testnet::B58_SCRIPT_ADDRESS_PREFIX,
             NetworkType::Regtest => regtest::B58_SCRIPT_ADDRESS_PREFIX,
+            NetworkType::SwarmMain => swarm_mainnet::B58_SCRIPT_ADDRESS_PREFIX,
         }
     }
 
@@ -367,6 +401,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::HRP_TEX_ADDRESS,
             NetworkType::Test => testnet::HRP_TEX_ADDRESS,
             NetworkType::Regtest => regtest::HRP_TEX_ADDRESS,
+            NetworkType::SwarmMain => swarm_mainnet::HRP_TEX_ADDRESS,
         }
     }
 
@@ -375,6 +410,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::HRP_UNIFIED_ADDRESS,
             NetworkType::Test => testnet::HRP_UNIFIED_ADDRESS,
             NetworkType::Regtest => regtest::HRP_UNIFIED_ADDRESS,
+            NetworkType::SwarmMain => swarm_mainnet::HRP_UNIFIED_ADDRESS,
         }
     }
 
@@ -383,6 +419,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::HRP_UNIFIED_FVK,
             NetworkType::Test => testnet::HRP_UNIFIED_FVK,
             NetworkType::Regtest => regtest::HRP_UNIFIED_FVK,
+            NetworkType::SwarmMain => swarm_mainnet::HRP_UNIFIED_FVK,
         }
     }
 
@@ -391,6 +428,7 @@ impl NetworkConstants for NetworkType {
             NetworkType::Main => mainnet::HRP_UNIFIED_IVK,
             NetworkType::Test => testnet::HRP_UNIFIED_IVK,
             NetworkType::Regtest => regtest::HRP_UNIFIED_IVK,
+            NetworkType::SwarmMain => swarm_mainnet::HRP_UNIFIED_IVK,
         }
     }
 }
@@ -735,6 +773,21 @@ pub enum BranchId {
     /// The consensus rules to be deployed by [`NetworkUpgrade::Nu7`].
     #[cfg(zcash_unstable = "nu7")]
     Nu7,
+    /// The SWARM production transaction domain for the NU6.3 (Ironwood) consensus rules.
+    ///
+    /// SWARM is a separate chain that runs the NU6.3 rule revision from height 1. Its
+    /// transactions must not be replayable on Zcash and Zcash transactions must not be
+    /// replayable on SWARM, so it needs its own `nConsensusBranchId` (ZIP 200) while running
+    /// the same rules. This variant is that domain: `0x53574d31`, the ASCII bytes `SWM1`.
+    ///
+    /// # Correctness
+    ///
+    /// Every rule-selecting method on this type answers for `SwarmMain` exactly what it answers
+    /// for [`BranchId::Nu6_3`]: the rules are the same, only the replay domain differs.
+    /// [`BranchId::for_height`] selects it for [`NetworkType::SwarmMain`] and for no other
+    /// network type, so the upstream `Main`, `Test` and `Regtest` schedules answer what they
+    /// always answered, and a SWARM transaction can never be signed under an upstream domain.
+    SwarmMain,
 }
 
 #[cfg(feature = "std")]
@@ -758,6 +811,7 @@ impl TryFrom<u32> for BranchId {
             0x37a5_165b => Ok(BranchId::Nu6_3),
             #[cfg(zcash_unstable = "nu7")]
             0xffff_ffff => Ok(BranchId::Nu7),
+            0x5357_4d31 => Ok(BranchId::SwarmMain),
             _ => Err("Unknown consensus branch ID"),
         }
     }
@@ -779,6 +833,7 @@ impl From<BranchId> for u32 {
             BranchId::Nu6_3 => 0x37a5_165b,
             #[cfg(zcash_unstable = "nu7")]
             BranchId::Nu7 => 0xffff_ffff,
+            BranchId::SwarmMain => 0x5357_4d31,
         }
     }
 }
@@ -788,7 +843,30 @@ impl BranchId {
     /// the given height.
     ///
     /// This is the branch ID that should be used when creating transactions.
+    ///
+    /// # Correctness
+    ///
+    /// The SWARM production network is selected by network type, ahead of the upgrade walk.
+    /// SWARM runs the NU6.3 rules from
+    /// [`swarm_mainnet::ACTIVATION_HEIGHT`][crate::constants::swarm_mainnet::ACTIVATION_HEIGHT]
+    /// under its own replay domain, and the walk returns `nu.branch_id()`, which for those
+    /// rules is the upstream NU6.3 domain. Reaching the walk with a SWARM `Parameters` would
+    /// sign a SWARM transaction into Zcash's NU6.3 domain and destroy replay protection, so the
+    /// SWARM arm comes first and answers [`BranchId::SwarmMain`].
+    ///
+    /// The converse holds as well: [`BranchId::SwarmMain`] is named by no [`NetworkUpgrade`], so
+    /// the walk can never reach it, and `Main`, `Test` and `Regtest` answer what they always
+    /// answered.
     pub fn for_height<P: Parameters>(parameters: &P, height: BlockHeight) -> Self {
+        if parameters.network_type() == NetworkType::SwarmMain {
+            return if height >= BlockHeight::from_u32(swarm_mainnet::ACTIVATION_HEIGHT) {
+                BranchId::SwarmMain
+            } else {
+                // Only the genesis block precedes SWARM's activation height, and no upgrade is
+                // in force there, which is what `Sprout` means in this table.
+                BranchId::Sprout
+            };
+        }
         for nu in UPGRADES_IN_ORDER.iter().rev() {
             if parameters.is_nu_active(*nu, height) {
                 return nu.branch_id();
@@ -818,6 +896,8 @@ impl BranchId {
             BranchId::Nu6_3 => NetworkUpgrade::Nu6_3,
             #[cfg(zcash_unstable = "nu7")]
             BranchId::Nu7 => NetworkUpgrade::Nu7,
+            // The SWARM production domain selects the NU6.3 rule revision.
+            BranchId::SwarmMain => NetworkUpgrade::Nu6_3,
         })
     }
 
@@ -876,7 +956,9 @@ impl BranchId {
             BranchId::Nu6_2 => params
                 .activation_height(NetworkUpgrade::Nu6_2)
                 .map(|lower| (lower, params.activation_height(NetworkUpgrade::Nu6_3))),
-            BranchId::Nu6_3 => params
+            // `SwarmMain` selects the NU6.3 rules, so its epoch is the NU6.3 epoch of whatever
+            // `params` describes.
+            BranchId::Nu6_3 | BranchId::SwarmMain => params
                 .activation_height(NetworkUpgrade::Nu6_3)
                 .map(|lower| {
                     #[cfg(zcash_unstable = "nu7")]
@@ -892,6 +974,9 @@ impl BranchId {
         }
     }
 
+    /// Returns `true` for consensus branches in which Sprout uses Groth16 proofs.
+    ///
+    /// `SwarmMain` is not listed, so it answers `true`, exactly as [`BranchId::Nu6_3`] does.
     pub fn sprout_uses_groth_proofs(&self) -> bool {
         !matches!(self, BranchId::Sprout | BranchId::Overwinter)
     }
@@ -902,7 +987,7 @@ impl BranchId {
         match self {
             Sprout | Overwinter | Sapling | Blossom | Heartwood | Canopy | Nu5 | Nu6 | Nu6_1
             | Nu6_2 => true,
-            BranchId::Nu6_3 => true,
+            BranchId::Nu6_3 | BranchId::SwarmMain => true,
             #[cfg(zcash_unstable = "nu7")]
             BranchId::Nu7 => false,
         }
@@ -914,7 +999,7 @@ impl BranchId {
         match self {
             Sprout | Overwinter => false,
             Sapling | Blossom | Heartwood | Canopy | Nu5 | Nu6 | Nu6_1 | Nu6_2 => true,
-            BranchId::Nu6_3 => true,
+            BranchId::Nu6_3 | BranchId::SwarmMain => true,
             #[cfg(zcash_unstable = "nu7")]
             BranchId::Nu7 => true,
         }
@@ -926,7 +1011,7 @@ impl BranchId {
         match self {
             Sprout | Overwinter | Sapling | Blossom | Heartwood | Canopy => false,
             Nu5 | Nu6 | Nu6_1 | Nu6_2 => true,
-            BranchId::Nu6_3 => true,
+            BranchId::Nu6_3 | BranchId::SwarmMain => true,
             #[cfg(zcash_unstable = "nu7")]
             BranchId::Nu7 => true,
         }
@@ -941,7 +1026,7 @@ impl BranchId {
             Sprout | Overwinter | Sapling | Blossom | Heartwood | Canopy => None,
             Nu5 | Nu6 | Nu6_1 => Some(OrchardProtocolRevision::InsecureV1),
             Nu6_2 => Some(OrchardProtocolRevision::V2),
-            Nu6_3 => Some(OrchardProtocolRevision::V3),
+            Nu6_3 | SwarmMain => Some(OrchardProtocolRevision::V3),
             #[cfg(zcash_unstable = "nu7")]
             Nu7 => Some(OrchardProtocolRevision::V3),
         }
@@ -978,6 +1063,11 @@ pub mod testing {
 
     use super::{BlockHeight, BranchId, Parameters};
 
+    /// An arbitrary upstream [`BranchId`].
+    ///
+    /// [`BranchId::SwarmMain`] is deliberately absent: these strategies are used with upstream
+    /// `Parameters` implementations, under which the SWARM production domain is never in effect,
+    /// and including it would change the distribution the upstream proptests sample.
     pub fn arb_branch_id() -> impl Strategy<Value = BranchId> {
         select(vec![
             BranchId::Sprout,
@@ -1037,8 +1127,156 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockHeight, BranchId, MAIN_NETWORK, NetworkUpgrade, Parameters, UPGRADES_IN_ORDER,
+        BlockHeight, BranchId, MAIN_NETWORK, NetworkConstants, NetworkType, NetworkUpgrade,
+        Parameters, TEST_NETWORK, UPGRADES_IN_ORDER, swarm_mainnet,
     };
+
+    /// Golden values for the SWARM production network type.
+    ///
+    /// These follow from the single HRP root literal in `constants::swarm_mainnet`,
+    /// so this test is where a change to that literal is recorded.
+    #[test]
+    fn swarm_main_network_constants() {
+        let net = NetworkType::SwarmMain;
+        assert_eq!(net.coin_type(), 9767);
+        assert_eq!(net.b58_pubkey_address_prefix(), [0x1c, 0x28]);
+        assert_eq!(net.b58_script_address_prefix(), [0x1c, 0x2d]);
+        assert_eq!(net.hrp_unified_address(), "swm");
+        assert_eq!(net.hrp_unified_fvk(), "uviewswm");
+        assert_eq!(net.hrp_unified_ivk(), "uivkswm");
+        assert_eq!(net.hrp_tex_address(), "texswm");
+        assert_eq!(net.hrp_sapling_payment_address(), "zswmsapling");
+        assert_eq!(
+            net.hrp_sapling_extended_spending_key(),
+            "secret-extended-key-swm"
+        );
+        assert_eq!(
+            net.hrp_sapling_extended_full_viewing_key(),
+            "zxviewswmsapling"
+        );
+    }
+
+    /// The existing networks must keep every byte of their identity.
+    #[test]
+    fn upstream_network_constants_are_unchanged() {
+        assert_eq!(NetworkType::Main.coin_type(), 133);
+        assert_eq!(NetworkType::Test.coin_type(), 1);
+        assert_eq!(NetworkType::Regtest.coin_type(), 1);
+        assert_eq!(NetworkType::Main.b58_pubkey_address_prefix(), [0x1c, 0xb8]);
+        assert_eq!(NetworkType::Main.b58_script_address_prefix(), [0x1c, 0xbd]);
+        assert_eq!(NetworkType::Test.b58_pubkey_address_prefix(), [0x1d, 0x25]);
+        assert_eq!(NetworkType::Test.b58_script_address_prefix(), [0x1c, 0xba]);
+        assert_eq!(NetworkType::Main.hrp_unified_address(), "u");
+        // The SWARM testnet identity, unchanged.
+        assert_eq!(NetworkType::Test.hrp_unified_address(), "swarm");
+        assert_eq!(NetworkType::Test.hrp_unified_fvk(), "uviewswarm");
+        assert_eq!(NetworkType::Test.hrp_unified_ivk(), "uivkswarm");
+        assert_eq!(
+            NetworkType::Test.hrp_sapling_payment_address(),
+            "ztestsapling"
+        );
+        assert_eq!(NetworkType::Regtest.hrp_unified_address(), "uregtest");
+    }
+
+    /// `SwarmMain` must never pick up an upstream activation schedule or branch ID.
+    #[test]
+    fn swarm_main_has_no_upstream_consensus_schedule() {
+        assert!(!NetworkType::SwarmMain.has_upstream_consensus_schedule());
+        for net in [NetworkType::Main, NetworkType::Test, NetworkType::Regtest] {
+            assert!(net.has_upstream_consensus_schedule());
+        }
+        // The two `Parameters` impls in this crate only ever report the upstream
+        // network types, so no SWARM production height can be read out of them.
+        assert_eq!(MAIN_NETWORK.network_type(), NetworkType::Main);
+        assert_eq!(TEST_NETWORK.network_type(), NetworkType::Test);
+    }
+
+    /// A minimal SWARM production profile: NU6.3 rules from
+    /// [`swarm_mainnet::ACTIVATION_HEIGHT`], nothing before it.
+    #[derive(Clone, Copy)]
+    struct SwarmMainnetParameters;
+
+    impl Parameters for SwarmMainnetParameters {
+        fn network_type(&self) -> NetworkType {
+            NetworkType::SwarmMain
+        }
+
+        fn activation_height(&self, _nu: NetworkUpgrade) -> Option<BlockHeight> {
+            Some(BlockHeight::from_u32(swarm_mainnet::ACTIVATION_HEIGHT))
+        }
+    }
+
+    /// `for_height` selects the SWARM replay domain for a SWARM profile, and the upstream
+    /// NU6.3 domain for nothing but an upstream one. This is the single line that stands
+    /// between a SWARM transaction and a Zcash-domain signature.
+    #[test]
+    fn swarm_main_selects_its_own_branch_domain() {
+        let activation = BlockHeight::from_u32(swarm_mainnet::ACTIVATION_HEIGHT);
+        for height in [activation, activation + 1, BlockHeight::from_u32(u32::MAX)] {
+            assert_eq!(
+                BranchId::for_height(&SwarmMainnetParameters, height),
+                BranchId::SwarmMain,
+            );
+        }
+        assert_eq!(
+            BranchId::for_height(&SwarmMainnetParameters, activation - 1),
+            BranchId::Sprout,
+        );
+        assert_eq!(u32::from(BranchId::SwarmMain), 0x5357_4d31);
+        assert_eq!(BranchId::try_from(0x5357_4d31u32), Ok(BranchId::SwarmMain));
+        assert_ne!(u32::from(BranchId::SwarmMain), u32::from(BranchId::Nu6_3));
+    }
+
+    /// The upstream networks keep their domains. `SwarmMain` is named by no network upgrade,
+    /// so the upgrade walk cannot reach it at any height on any upstream profile.
+    #[test]
+    fn upstream_networks_never_select_the_swarm_branch_domain() {
+        for height in [
+            BlockHeight::from_u32(1),
+            BlockHeight::from_u32(1_000_000),
+            BlockHeight::from_u32(u32::MAX),
+        ] {
+            for branch in [
+                BranchId::for_height(&MAIN_NETWORK, height),
+                BranchId::for_height(&TEST_NETWORK, height),
+            ] {
+                assert_ne!(branch, BranchId::SwarmMain);
+            }
+        }
+        for nu in UPGRADES_IN_ORDER {
+            assert_ne!(nu.branch_id(), BranchId::SwarmMain);
+        }
+    }
+
+    /// `SwarmMain` runs the NU6.3 rule revision, so every rule-selecting method answers
+    /// for it what it answers for NU6.3.
+    #[test]
+    fn swarm_main_branch_runs_the_nu6_3_rules() {
+        assert_eq!(
+            BranchId::SwarmMain.network_upgrade(),
+            BranchId::Nu6_3.network_upgrade(),
+        );
+        assert_eq!(
+            BranchId::SwarmMain.has_sprout(),
+            BranchId::Nu6_3.has_sprout()
+        );
+        assert_eq!(
+            BranchId::SwarmMain.has_sapling(),
+            BranchId::Nu6_3.has_sapling(),
+        );
+        assert_eq!(
+            BranchId::SwarmMain.has_orchard(),
+            BranchId::Nu6_3.has_orchard(),
+        );
+        assert_eq!(
+            BranchId::SwarmMain.sprout_uses_groth_proofs(),
+            BranchId::Nu6_3.sprout_uses_groth_proofs(),
+        );
+        assert_eq!(
+            BranchId::SwarmMain.orchard_protocol_revision(),
+            BranchId::Nu6_3.orchard_protocol_revision(),
+        );
+    }
 
     #[test]
     fn nu_ordering() {
