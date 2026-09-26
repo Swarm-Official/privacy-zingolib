@@ -715,6 +715,7 @@ impl LightClient {
             sapling_activation_height: i.sapling_activation_height,
             consensus_branch_id: i.consensus_branch_id,
             latest_block_height: i.block_height,
+            genesis_hash: i.genesis_hash,
         })
     }
 
@@ -1162,6 +1163,61 @@ mod tests {
             assert!(
                 matches!(error, crate::lightclient::error::LightClientError::Offline),
                 "the failure must be typed, not prose: {error}"
+            );
+        }
+    }
+
+    /// `ServerInfo::genesis_hash`: the chain's identity, not only its label.
+    ///
+    /// `chain_name` is a string the server chooses. Two chains built from the
+    /// same software answer the same one, so a wallet that trusted it alone
+    /// could sync a SWARM production wallet against a rehearsal chain. The
+    /// genesis hash cannot be chosen: it is the chain. These tests pin that
+    /// `info()` carries it through from wire field 19, and that a server which
+    /// states nothing is distinguishable from one that states something.
+    mod server_genesis {
+        use crate::testutils::mock_indexer::{MockChain, MockNet};
+
+        /// A hash no real chain has, so the value can only have come from the
+        /// server's reply.
+        const SERVED: &str = "01c34428b9e67cdd8345e0b365aaa37dd8d2d65d3869e0e5d77d567f2c39afdd";
+
+        #[tokio::test]
+        async fn info_carries_the_genesis_the_server_states() {
+            let mut chain = MockChain::new();
+            chain.reported_genesis_hash = SERVED.to_string();
+            let mut net = MockNet::launch_with(chain).await;
+            let mut client = net
+                .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .await;
+
+            let info = client.info().await.expect("the mock serves info");
+            assert_eq!(info.genesis_hash, SERVED);
+
+            let rendered = json::JsonValue::from(info);
+            assert_eq!(
+                rendered["genesis_hash"].as_str(),
+                Some(SERVED),
+                "the JSON a wallet reads must carry the genesis: {rendered}"
+            );
+        }
+
+        /// A server built before field 19 sends nothing for it, which decodes
+        /// as the empty string. That is "this server did not say", and a wallet
+        /// must be able to tell it apart from a stated hash, so `info()` must
+        /// surface it rather than inventing a value or failing.
+        #[tokio::test]
+        async fn a_server_that_states_no_genesis_reads_as_empty() {
+            let mut net = MockNet::launch().await;
+            let mut client = net
+                .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .await;
+
+            let info = client.info().await.expect("the mock serves info");
+            assert_eq!(info.genesis_hash, "");
+            assert_eq!(
+                json::JsonValue::from(info)["genesis_hash"].as_str(),
+                Some(""),
             );
         }
     }

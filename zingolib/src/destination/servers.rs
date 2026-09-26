@@ -560,7 +560,10 @@ mod tests {
         let set = DestinationServerSet::for_chain(&ChainType::CustomTestnet, None, Vec::new());
         assert!(set.registry.is_empty());
         assert!(set.configured.is_empty());
-        assert!(set.draw(Transport::Clearnet, None, &Health::default()).is_err());
+        assert!(
+            set.draw(Transport::Clearnet, None, &Health::default())
+                .is_err()
+        );
     }
 
     fn drawn(set: &DestinationServerSet, transport: Transport, sync: Option<&Uri>) -> Vec<Uri> {

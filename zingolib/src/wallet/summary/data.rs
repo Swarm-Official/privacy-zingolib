@@ -838,7 +838,10 @@ mod tests {
             ..self_send_summary(vec![], vec![], vec![])
         };
         let paid = self_send_summary(vec![], vec![], vec![]);
-        assert!(!paid.is_coinbase, "a summary is not a coinbase unless it says so");
+        assert!(
+            !paid.is_coinbase,
+            "a summary is not a coinbase unless it says so"
+        );
 
         for (summary, expected) in [(&mined, true), (&paid, false)] {
             let transfer = ValueTransfer::from_summary(

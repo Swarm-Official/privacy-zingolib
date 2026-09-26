@@ -34,6 +34,23 @@ pub struct ServerInfo {
     pub consensus_branch_id: String,
     /// The server's view of the chain tip height.
     pub latest_block_height: u64,
+    /// The height-zero block hash of the chain the server indexes, as 64
+    /// lowercase hexadecimal characters in display order, or empty when the
+    /// server did not state one.
+    ///
+    /// [`ServerInfo::chain_name`] names a chain but cannot prove it: two chains
+    /// built from the same software answer the same label, so a wallet that
+    /// trusted the label alone could sync a SWARM production wallet against a
+    /// rehearsal chain and write its state back over the right one. The genesis
+    /// is the chain's identity, so a wallet can compare the hash it was built
+    /// for against the hash the server serves.
+    ///
+    /// Empty means "this server did not say", never "no genesis": the wire
+    /// field (`LightdInfo.genesisHash`, number 19) is appended rather than
+    /// inserted, so a server built before it sends nothing, and that decodes as
+    /// the empty string. Regtest sends empty for real, since its genesis is
+    /// whatever the local validator made.
+    pub genesis_hash: String,
 }
 
 impl From<ServerInfo> for json::JsonValue {
@@ -47,7 +64,8 @@ impl From<ServerInfo> for json::JsonValue {
             "chain_name" => info.chain_name,
             "sapling_activation_height" => info.sapling_activation_height,
             "consensus_branch_id" => info.consensus_branch_id,
-            "latest_block_height" => info.latest_block_height
+            "latest_block_height" => info.latest_block_height,
+            "genesis_hash" => info.genesis_hash
         }
     }
 }
@@ -121,5 +139,83 @@ pub mod receivers {
             .collect::<Result<Vec<_>, Zip321Error>>()?;
 
         TransactionRequest::new(payments)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The wire contract behind [`ServerInfo::genesis_hash`].
+    //!
+    //! The field is only worth reading if the pinned protocol crate actually
+    //! carries `LightdInfo.genesisHash` at number 19, and if the number was
+    //! appended rather than inserted. Both are properties of the dependency
+    //! pin, not of this crate's code, so they are asserted here: a pin moved
+    //! back to a rev without the field stops the build, and a pin moved to a
+    //! rev that renumbered it fails these tests.
+
+    use prost::Message as _;
+    use zingo_netutils::lightwallet_protocol::LightdInfo;
+
+    const GENESIS: &str = "01c34428b9e67cdd8345e0b365aaa37dd8d2d65d3869e0e5d77d567f2c39afdd";
+
+    /// The hash the server states survives a round trip on the wire.
+    #[test]
+    fn genesis_hash_round_trips_on_the_wire() {
+        let served = LightdInfo {
+            chain_name: "swarm-mainnet".to_string(),
+            genesis_hash: GENESIS.to_string(),
+            ..Default::default()
+        };
+        let mut bytes = Vec::new();
+        served.encode(&mut bytes).expect("a message encodes");
+        let read = LightdInfo::decode(bytes.as_slice()).expect("the message decodes");
+        assert_eq!(read.genesis_hash, GENESIS);
+    }
+
+    /// Field 19, appended and never inserted: it is the last tag on the wire,
+    /// and every field below it keeps its number. A message from a server that
+    /// predates the field therefore decodes with an empty `genesis_hash`, which
+    /// means "this server did not say" and never "no genesis".
+    #[test]
+    fn a_reply_without_field_19_decodes_as_not_stated() {
+        let older_server = LightdInfo {
+            chain_name: "main".to_string(),
+            ..Default::default()
+        };
+        let mut bytes = Vec::new();
+        older_server.encode(&mut bytes).expect("a message encodes");
+        // Tag byte for field 19, wire type 2 (length-delimited): (19 << 3) | 2
+        // = 154, which needs a two-byte varint key. Its absence is what makes
+        // the reply an older server's.
+        assert!(
+            !bytes.windows(2).any(|pair| pair == [0x9a, 0x01]),
+            "an unset genesis must put nothing on the wire: {bytes:?}"
+        );
+        let read = LightdInfo::decode(bytes.as_slice()).expect("the message decodes");
+        assert_eq!(read.genesis_hash, "");
+    }
+
+    /// The JSON `LightClient::info` hands a wallet carries the genesis beside
+    /// the chain label, so the wallet can check the chain rather than trust a
+    /// name the server chose.
+    #[test]
+    fn server_info_json_carries_the_genesis() {
+        let info = super::ServerInfo {
+            version: "1".to_string(),
+            git_commit: "abc".to_string(),
+            server_uri: "https://lwd-main.swarm.green:8443"
+                .parse()
+                .expect("a valid uri"),
+            vendor: "swarm".to_string(),
+            taddr_support: true,
+            chain_name: "swarm-mainnet".to_string(),
+            sapling_activation_height: 1,
+            consensus_branch_id: "53574d31".to_string(),
+            latest_block_height: 42,
+            genesis_hash: GENESIS.to_string(),
+        };
+        let rendered = json::JsonValue::from(info);
+        assert_eq!(rendered["genesis_hash"].as_str(), Some(GENESIS));
+        assert_eq!(rendered["chain_name"].as_str(), Some("swarm-mainnet"));
     }
 }

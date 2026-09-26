@@ -474,6 +474,119 @@ mod test {
         );
     }
 
+    /// The SWARM production network runs the NU6.3 (Ironwood) rules from
+    /// height 1, so there is no Orchard era on it at all: every shielded
+    /// payment a wallet plans there is an Ironwood payment, from the chain's
+    /// first block.
+    ///
+    /// The receiver a unified address carries does not change for that, and
+    /// must not. ZIP 318 routes Ironwood payments to the **Orchard receiver**:
+    /// there is no separate Ironwood receiver typecode in ZIP 316, and
+    /// `zcash_address::unified::Receiver` has no variant for one. An
+    /// orchard-only unified address is therefore the payable Ironwood address
+    /// on this chain, not an unpayable one. This test pins both halves so
+    /// neither can drift: the address the wallet mints for
+    /// `ChainType::SwarmMainnet` is a `swm1…` unified address carrying an
+    /// orchard receiver, and a send to it is proposed into the Ironwood pool.
+    #[test]
+    fn a_swarm_production_address_is_paid_in_ironwood() {
+        use crate::config::{ChainType, SwarmMainnetGenesis};
+
+        let chain = ChainType::SwarmMainnet(
+            SwarmMainnetGenesis::from_display_hex(
+                "01c34428b9e67cdd8345e0b365aaa37dd8d2d65d3869e0e5d77d567f2c39afdd",
+            )
+            .expect("the live SWARM production genesis parses"),
+        );
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .chain_type(chain)
+                .ironwood_note(100_000)
+                .build();
+
+        let (_, orchard_only) = wallet
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        let (_, all_shielded) = wallet
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .unwrap();
+
+        // The receivers, before the send: orchard is present, and it is what
+        // Ironwood value is paid to.
+        assert!(
+            orchard_only.orchard().is_some(),
+            "a SWARM production UA must carry the orchard receiver Ironwood pays to",
+        );
+        assert!(all_shielded.orchard().is_some());
+        assert!(all_shielded.sapling().is_some());
+
+        let orchard_only = orchard_only.encode(&chain);
+        let all_shielded = all_shielded.encode(&chain);
+        assert!(
+            orchard_only.starts_with("swm1"),
+            "unexpected SWARM production prefix: {orchard_only}",
+        );
+
+        let request = transaction_request_from_send_inputs(vec![
+            (orchard_only.as_str(), 10_000, None),
+            (all_shielded.as_str(), 10_000, None),
+        ])
+        .expect("valid send inputs form a request");
+
+        let proposal = wallet
+            .create_send_proposal(request, zip32::AccountId::ZERO)
+            .expect("synthetic wallet data supports proposing");
+        let pools = proposal.steps().first().payment_pools();
+        assert_eq!(
+            pools[&0],
+            PoolType::Shielded(ShieldedPool::Ironwood),
+            "an orchard-only UA on SWARM production must be paid in ironwood",
+        );
+        assert_eq!(
+            pools[&1],
+            PoolType::Shielded(ShieldedPool::Ironwood),
+            "an all-shielded UA on SWARM production must be paid in ironwood",
+        );
+    }
+
+    /// SwarmTestnet's schedule activates every upgrade through NU6.3 at
+    /// height 1 as well, so the same rule holds there: an orchard receiver is
+    /// paid in Ironwood, from the chain's first block. The two SWARM chains
+    /// differ in their encodings and their genesis, never in their pool era.
+    #[test]
+    fn a_swarm_testnet_address_is_paid_in_ironwood() {
+        use crate::config::ChainType;
+
+        let chain = ChainType::CustomTestnet;
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .chain_type(chain)
+                .ironwood_note(100_000)
+                .build();
+
+        let (_, orchard_only) = wallet
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        assert!(orchard_only.orchard().is_some());
+        let orchard_only = orchard_only.encode(&chain);
+        assert!(
+            orchard_only.starts_with("swarm1"),
+            "unexpected SwarmTestnet prefix: {orchard_only}",
+        );
+
+        let request =
+            transaction_request_from_send_inputs(vec![(orchard_only.as_str(), 10_000, None)])
+                .expect("valid send inputs form a request");
+        let proposal = wallet
+            .create_send_proposal(request, zip32::AccountId::ZERO)
+            .expect("synthetic wallet data supports proposing");
+        assert_eq!(
+            proposal.steps().first().payment_pools()[&0],
+            PoolType::Shielded(ShieldedPool::Ironwood),
+            "an orchard-only UA on SwarmTestnet must be paid in ironwood",
+        );
+    }
+
     /// Migrated from libtonode `propose_orchard_dust_to_sapling`: a wallet
     /// holding an ordinary orchard note and a dust note can propose a
     /// cross-pool send to a sapling address.

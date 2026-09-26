@@ -164,8 +164,14 @@ zcash_primitives = { path = "vendor/zcash_primitives" }
 # `NetworkType::SwarmMain` explicitly; see vendor/README.md.
 zcash_transparent = { path = "vendor/zcash_transparent" }
 # Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
-# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
-# upstream main after PR #5 merged the Ironwood protos; the crate version is still
-# 0.3.0. The generated code on that rev predates the proto change, which is why the
-# workspace dependency enables `rebuild-proto`.
-lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }
+# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize), plus the SWARM
+# addition `LightdInfo.genesisHash = 19`, which is how a wallet learns which chain the
+# server actually serves rather than only what it calls itself. The rev is the SWARM
+# fork's `swarm-genesis-hash-20260926`, one commit above zingolabs
+# 9bdfdc77eb283f2a3d26c27100cc2ac90148cd93 (upstream main after PR #5 merged the
+# Ironwood protos); the crate version is still 0.3.0. Field 19 is appended, never
+# inserted, so an older server that does not send it decodes as the empty string.
+# The generated code is regenerated from the `.proto` at build time, which is why the
+# workspace dependency enables `rebuild-proto`; the fork also carries the field in its
+# checked-in generated module, so the crate is correct either way.
+lightwallet-protocol = { git = "https://github.com/Swarm-Official/privacy-lightwallet-protocol-rust", rev = "c9c13e46bbea726f904f12cb18cd85e57ff46d35" }

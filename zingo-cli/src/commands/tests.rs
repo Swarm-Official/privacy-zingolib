@@ -1953,3 +1953,183 @@ mod attached_exit_reporting {
         }
     }
 }
+
+#[cfg(test)]
+mod swarm_address_parsing {
+    //! `parse_address` against the SWARM chains.
+    //!
+    //! The command answers "what is this string, and where may it be spent".
+    //! Before the SWARM production network existed it read three profiles -
+    //! Zcash Mainnet, Zcash Testnet, regtest - so every SWARM production
+    //! encoding came back `Invalid address`, which is the one answer that is
+    //! never true of a live network's own addresses. These tests pin the
+    //! answers, in both directions: what the SWARM chains accept, and what they
+    //! must refuse.
+    //!
+    //! The transparent vectors are the ones `vendor/zcash_address` pins, from
+    //! `Mainnet identity constants research 2026-09-25` and from
+    //! `network/swarm-testnet/DESTINATIONS.md`. The unified addresses are
+    //! minted here by a wallet on each chain, because decoding one parses its
+    //! receivers as curve points.
+
+    use super::super::parse_address;
+
+    /// SWARM production transparent P2PKH (`0x1c28` -> `s1...`).
+    const SWARM_MAIN_P2PKH: &str = "s1MCkDhVejM4RqDyRR1rEJkudd26FVWipPD";
+    /// SWARM production transparent P2SH (`0x1c2d` -> `s3...`).
+    const SWARM_MAIN_P2SH: &str = "s3Mtm9Ez6HFNovPfrY7WpjPGZmYNxztrxbb";
+    /// The SWARM production genesis, so the chain profile can be built.
+    const SWARM_MAIN_GENESIS: &str =
+        "01c34428b9e67cdd8345e0b365aaa37dd8d2d65d3869e0e5d77d567f2c39afdd";
+    /// A SwarmTestnet transparent funding-stream destination, as published in
+    /// `network/swarm-testnet/DESTINATIONS.md`.
+    const SWARM_TESTNET_P2SH: &str = "t2DGVURG5tAyXXSkj85JV5xbvTobYv7H99n";
+    /// A Zcash Mainnet transparent address.
+    const ZCASH_MAIN_P2PKH: &str = "t1dRJRY7GmyeykJnMH38mdQoaZtFhn1QmGz";
+
+    fn swarm_mainnet() -> zingolib::config::ChainType {
+        zingolib::config::ChainType::SwarmMainnet(
+            zingolib::config::SwarmMainnetGenesis::from_display_hex(SWARM_MAIN_GENESIS)
+                .expect("the live SWARM production genesis parses"),
+        )
+    }
+
+    /// An all-shielded unified address minted by a wallet on `chain`, so the
+    /// receiver bytes are real and the encoding is the one that chain
+    /// produces. A hand-written vector cannot serve here: decoding a unified
+    /// address parses its receivers as curve points, which a fabricated
+    /// string's bytes are not.
+    fn minted_unified_address(chain: zingolib::config::ChainType) -> String {
+        use zingolib::wallet::keys::unified::ReceiverSelection;
+
+        let mut wallet = zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder::new(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+        )
+        .chain_type(chain)
+        .build();
+        let (_, address) = wallet
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .expect("a fresh wallet mints a unified address");
+        address.encode(&chain)
+    }
+
+    fn parsed(address: &str) -> json::JsonValue {
+        json::parse(&parse_address(address).expect("parse_address never errors"))
+            .expect("parse_address answers JSON")
+    }
+
+    fn valid_on(address: &str) -> Vec<String> {
+        parsed(address)["valid_on"]
+            .members()
+            .map(|name| name.as_str().expect("a chain name is a string").to_string())
+            .collect()
+    }
+
+    /// `s1...` and `s3...` are SWARM production addresses, and are that on the
+    /// SWARM production network alone.
+    #[test]
+    fn swarm_production_transparent_addresses_are_recognised() {
+        for address in [SWARM_MAIN_P2PKH, SWARM_MAIN_P2SH] {
+            let answer = parsed(address);
+            assert_eq!(answer["status"].as_str(), Some("success"), "{answer}");
+            assert_eq!(
+                answer["chain_name"].as_str(),
+                Some("swarm-mainnet"),
+                "{answer}"
+            );
+            assert_eq!(
+                answer["address_kind"].as_str(),
+                Some("transparent"),
+                "{answer}"
+            );
+            assert_eq!(valid_on(address), vec!["swarm-mainnet".to_string()]);
+        }
+    }
+
+    /// A SWARM production unified address, minted by a wallet on that chain,
+    /// is read back as one.
+    #[test]
+    fn a_swarm_production_unified_address_is_recognised() {
+        let encoded = minted_unified_address(swarm_mainnet());
+        assert!(encoded.starts_with("swm1"), "unexpected prefix: {encoded}");
+
+        let answer = parsed(&encoded);
+        assert_eq!(answer["status"].as_str(), Some("success"), "{answer}");
+        assert_eq!(
+            answer["chain_name"].as_str(),
+            Some("swarm-mainnet"),
+            "{answer}"
+        );
+        assert_eq!(answer["address_kind"].as_str(), Some("unified"), "{answer}");
+        assert_eq!(valid_on(&encoded), vec!["swarm-mainnet".to_string()]);
+    }
+
+    /// The custom-testnet profile is one the command knows. A SwarmTestnet
+    /// address decodes on it, and equally on Zcash Testnet, because the two
+    /// share `NetworkType::Test` and no address can tell them apart.
+    /// `valid_on` reports both rather than the answer picking one and hiding
+    /// the other.
+    #[test]
+    fn swarm_testnet_addresses_are_valid_on_the_custom_testnet() {
+        let minted = minted_unified_address(zingolib::config::ChainType::CustomTestnet);
+        assert!(
+            minted.starts_with("swarm1"),
+            "unexpected SwarmTestnet prefix: {minted}"
+        );
+
+        for address in [minted.as_str(), SWARM_TESTNET_P2SH] {
+            let answer = parsed(address);
+            assert_eq!(answer["status"].as_str(), Some("success"), "{answer}");
+            let names = valid_on(address);
+            assert!(names.contains(&"swarm-testnet".to_string()), "{names:?}");
+            assert!(names.contains(&"test".to_string()), "{names:?}");
+        }
+    }
+
+    /// The negative half, and the reason the whole thing exists: a SWARM
+    /// production address is not spendable anywhere else, and no other chain's
+    /// address is spendable on SWARM production.
+    #[test]
+    fn the_swarm_chains_refuse_each_others_addresses() {
+        for address in [SWARM_MAIN_P2PKH, SWARM_MAIN_P2SH] {
+            let names = valid_on(address);
+            assert!(!names.contains(&"main".to_string()), "{names:?}");
+            assert!(!names.contains(&"test".to_string()), "{names:?}");
+            assert!(!names.contains(&"swarm-testnet".to_string()), "{names:?}");
+        }
+        let swarm_testnet_ua = minted_unified_address(zingolib::config::ChainType::CustomTestnet);
+        for address in [
+            swarm_testnet_ua.as_str(),
+            SWARM_TESTNET_P2SH,
+            ZCASH_MAIN_P2PKH,
+        ] {
+            assert!(
+                !valid_on(address).contains(&"swarm-mainnet".to_string()),
+                "{address} must not be a SWARM production address",
+            );
+        }
+    }
+
+    /// Zcash Mainnet keeps its answer: adding profiles must not move an
+    /// existing string to a different chain.
+    #[test]
+    fn zcash_mainnet_still_answers_main() {
+        let answer = parsed(ZCASH_MAIN_P2PKH);
+        assert_eq!(answer["chain_name"].as_str(), Some("main"), "{answer}");
+        assert_eq!(valid_on(ZCASH_MAIN_P2PKH), vec!["main".to_string()]);
+    }
+
+    /// A string that is no chain's address still says so, with an empty
+    /// `valid_on` rather than a missing one.
+    #[test]
+    fn a_string_that_is_no_address_is_valid_nowhere() {
+        let answer = parsed("not-an-address");
+        assert_eq!(
+            answer["status"].as_str(),
+            Some("Invalid address"),
+            "{answer}"
+        );
+        assert!(answer["valid_on"].is_array(), "{answer}");
+        assert_eq!(answer["valid_on"].len(), 0, "{answer}");
+    }
+}

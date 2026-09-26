@@ -50,6 +50,7 @@ use crate::wallet::LightWallet;
 pub struct SyntheticWalletBuilder {
     mnemonic: String,
     tip: u32,
+    chain_type: Option<ChainType>,
     activation_heights: ActivationHeights,
     ironwood_note_values: Vec<u64>,
     orchard_note_values: Vec<u64>,
@@ -64,6 +65,7 @@ impl SyntheticWalletBuilder {
         Self {
             mnemonic: mnemonic.to_string(),
             tip: 20,
+            chain_type: None,
             activation_heights: ActivationHeights::default(),
             ironwood_note_values: Vec::new(),
             orchard_note_values: Vec::new(),
@@ -84,6 +86,17 @@ impl SyntheticWalletBuilder {
     /// use this to position an activation just above the synced tip.
     pub fn activation_heights(mut self, heights: ActivationHeights) -> Self {
         self.activation_heights = heights;
+        self
+    }
+
+    /// Builds the wallet on `chain` instead of the default regtest profile,
+    /// so a test can assert what a real network's own parameters produce:
+    /// its address encodings, its coin type, its upgrade schedule.
+    ///
+    /// The notes are fabricated the same way on any chain. What changes is
+    /// the consensus the wallet derives keys and plans sends under.
+    pub fn chain_type(mut self, chain: ChainType) -> Self {
+        self.chain_type = Some(chain);
         self
     }
 
@@ -124,7 +137,8 @@ impl SyntheticWalletBuilder {
             "tip must exceed the highest note confirmation height"
         );
         let mut wallet = LightWallet::new(
-            ChainType::Regtest(self.activation_heights),
+            self.chain_type
+                .unwrap_or(ChainType::Regtest(self.activation_heights)),
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: self.mnemonic.clone(),
                 no_of_accounts: 1.try_into().expect("hard-coded non-zero"),

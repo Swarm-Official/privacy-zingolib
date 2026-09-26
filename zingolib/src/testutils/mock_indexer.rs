@@ -521,6 +521,14 @@ pub struct MockChain {
     /// from the branch it replaced. A wallet detects the reorg by hash
     /// mismatch, exactly as against a real chain.
     branch_seed: u32,
+    /// What `GetLightdInfo` answers in `genesisHash` (field 19): the
+    /// display-order genesis hash of the chain this mock claims to serve.
+    ///
+    /// Empty by default, which is what the mock's regtest profile means in
+    /// production too: a regtest genesis is whatever the local validator
+    /// made, so the server cannot state it. A test that exercises the
+    /// genesis check sets this to the hash it wants the server to claim.
+    pub reported_genesis_hash: String,
 }
 
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
@@ -783,6 +791,7 @@ impl MockChain {
             rejected_sends: 0,
             taddr_request_log: Vec::new(),
             branch_seed: 0,
+            reported_genesis_hash: String::new(),
         }
     }
 
@@ -1760,6 +1769,7 @@ impl CompactTxStreamer for MockIndexerService {
             consensus_branch_id: format!("{branch_id:08x}"),
             block_height: u64::from(tip),
             estimated_height: u64::from(tip),
+            genesis_hash: chain.reported_genesis_hash.clone(),
             ..Default::default()
         }))
     }

@@ -981,6 +981,51 @@ async fn wallet_kind(lightclient: &mut LightClient) -> Result<String, CommandErr
     )
 }
 
+/// Every chain profile `parse_address` decodes a string against, in the order
+/// it reports them.
+///
+/// The SWARM production network is here because its encodings are its own:
+/// `swm1...` unified, `zswmsapling1...` sapling, `s1...`/`s3...` transparent,
+/// `texswm1...` TEX. Nothing else decodes them and they decode as nothing else,
+/// which is the point - a SWARM production address must not be mistaken for a
+/// Zcash one, and a Zcash or SWARM testnet address must not be spendable as a
+/// SWARM production one.
+///
+/// [`zingolib::config::ChainType::CustomTestnet`] is here for completeness of
+/// the profile list. It shares `NetworkType::Test` with
+/// [`zingolib::config::ChainType::Testnet`], so the two cannot be told apart
+/// from an address alone: `swarm1...`, this SDK's vendored testnet unified HRP,
+/// decodes on both. `valid_on` in the answer says so, rather than the report
+/// picking one profile and hiding the other.
+fn address_chain_profiles() -> [zingolib::config::ChainType; 5] {
+    [
+        zingolib::config::ChainType::Mainnet,
+        // Decoding reads the chain's network type and never the genesis hash a
+        // `SwarmMainnet` carries, so this entry supplies the all-zero hash
+        // rather than pretending to know which SWARM production chain the
+        // caller meant. "Is this a SWARM production address" has one answer for
+        // every SWARM production chain.
+        zingolib::config::ChainType::SwarmMainnet(
+            zingolib::config::SwarmMainnetGenesis::from_display_hex(&"0".repeat(64))
+                .expect("64 zeros is a well-formed display-order hash"),
+        ),
+        zingolib::config::ChainType::Testnet,
+        zingolib::config::ChainType::CustomTestnet,
+        zingolib::config::ChainType::Regtest(ActivationHeights::default()),
+    ]
+}
+
+/// The name `parse_address` reports for a chain profile.
+fn address_chain_name(chain: zingolib::config::ChainType) -> &'static str {
+    match chain {
+        zingolib::config::ChainType::Mainnet => "main",
+        zingolib::config::ChainType::Testnet => "test",
+        zingolib::config::ChainType::CustomTestnet => zingolib::config::SWARM_TESTNET_NAME,
+        zingolib::config::ChainType::SwarmMainnet(_) => zingolib::config::SWARM_MAINNET_NAME,
+        zingolib::config::ChainType::Regtest(_) => "regtest",
+    }
+}
+
 fn parse_address(address: &str) -> Result<String, CommandError> {
     fn make_decoded_chain_pair(
         address: &str,
@@ -988,43 +1033,43 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
         zcash_client_backend::address::Address,
         zingolib::config::ChainType,
     )> {
-        [
-            zingolib::config::ChainType::Mainnet,
-            zingolib::config::ChainType::Testnet,
-            zingolib::config::ChainType::Regtest(ActivationHeights::default()),
-        ]
-        .iter()
-        .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+        address_chain_profiles()
+            .iter()
+            .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+    }
+    /// Every profile the string decodes on, not only the first. Two profiles
+    /// that share a network type accept the same strings, and a reader
+    /// deciding where a payment may be sent needs to see both.
+    fn valid_on(address: &str) -> Vec<&'static str> {
+        address_chain_profiles()
+            .iter()
+            .filter(|chain| Address::decode(*chain, address).is_some())
+            .map(|chain| address_chain_name(*chain))
+            .collect()
     }
     Ok(
         if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(address) {
-            #[allow(unreachable_patterns)]
-            let chain_name_string = match chain_name {
-                zingolib::config::ChainType::Mainnet => "main",
-                zingolib::config::ChainType::Testnet => "test",
-                zingolib::config::ChainType::CustomTestnet => zingolib::config::SWARM_TESTNET_NAME,
-                zingolib::config::ChainType::SwarmMainnet(_) => {
-                    zingolib::config::SWARM_MAINNET_NAME
-                }
-                zingolib::config::ChainType::Regtest(_) => "regtest",
-                _ => unreachable!("Invalid chain type"),
-            };
+            let chain_name_string = address_chain_name(chain_name);
+            let valid_on = valid_on(address);
             match recipient_address {
                 Address::Sapling(_) => object! {
                     "status" => "success",
                     "chain_name" => chain_name_string,
+                    "valid_on" => valid_on,
                     "address_kind" => "sapling",
                 }
                 .to_string(),
                 Address::Transparent(_) => object! {
                     "status" => "success",
                     "chain_name" => chain_name_string,
+                    "valid_on" => valid_on,
                     "address_kind" => "transparent",
                 }
                 .to_string(),
                 Address::Tex(_) => object! {
                     "status" => "success",
                     "chain_name" => chain_name_string,
+                    "valid_on" => valid_on,
                     "address_kind" => "tex",
                 }
                 .to_string(),
@@ -1041,6 +1086,7 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
                         object! {
                         "status" => "success",
                         "chain_name" => chain_name_string,
+                        "valid_on" => valid_on,
                         "address_kind" => "unified",
                         "receivers_available" => receivers_available,
                         "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().copied(), None, None).expect("To construct UA").encode(&chain_name),
@@ -1050,6 +1096,7 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
                         object! {
                             "status" => "success",
                             "chain_name" => chain_name_string,
+                            "valid_on" => valid_on,
                             "address_kind" => "unified",
                             "receivers_available" => receivers_available,
                         }
@@ -1061,6 +1108,7 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
             object! {
                 "status" => "Invalid address",
                 "chain_name" => json::JsonValue::Null,
+                "valid_on" => json::JsonValue::Array(Vec::new()),
                 "address_kind" => json::JsonValue::Null,
             }
             .to_string()

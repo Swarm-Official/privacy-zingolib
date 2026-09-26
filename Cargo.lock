@@ -1773,7 +1773,7 @@ dependencies = [
 [[package]]
 name = "lightwallet-protocol"
 version = "0.3.0"
-source = "git+https://github.com/zingolabs/lightwallet-protocol-rust?rev=9bdfdc77eb283f2a3d26c27100cc2ac90148cd93#9bdfdc77eb283f2a3d26c27100cc2ac90148cd93"
+source = "git+https://github.com/Swarm-Official/privacy-lightwallet-protocol-rust?rev=c9c13e46bbea726f904f12cb18cd85e57ff46d35#c9c13e46bbea726f904f12cb18cd85e57ff46d35"
 dependencies = [
  "prost",
  "tonic",
